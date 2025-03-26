@@ -140,46 +140,54 @@ Nesta seção, detalharemos o fluxo do pipeline ETL para a plataforma de E-comme
 
 A seguir, um diagrama ilustrativo (em ASCII) que mostra a organização do fluxo de dados:
 
-        +-----------------------+
-        |     Fontes de Dados   |
-        +-----------------------+
-        |  SQLite    | CSV  | In-Memory (Mock)  |
-        +-----+-----+------+-------------------+
-              |            | 
-              v            v
-      +--------------------------+
-      |   Coleta de Dados (ETL)  |
-      +--------------------------+
-              |
-              v
- +-----------------------------+
- |     Handlers / Transformações     |
- |                             |
- |  1. Filtrar Pedidos         |
- |  2. Consolidar Estoque      |
- |  3. Previsão de Entrega     |
- |  4. Combinação (Grau 2)       |
- |      - Relatório Disponibilidade |
- |      - Alerta de Reposição       |
- |  5. Métricas de Vendas      |
- +-----------------------------+
-              |
-              v
-     +----------------------+
-     |     Carregamento     |
-     | (CSV, SQLite, etc.)  |
-     +----------------------+
-              |
-              v
-     +----------------------+
-     |      Dashboard       |
-     |   (Visualização de   |
-     |  análises e latência)|
-     +----------------------+
+            +------------------------------------+
+            |         Fontes de Dados            |
+            +------------------------------------+
+            |  SQLite   |    CSV    | In-Memory   |
+            |           |           |   (Mock)    |
+            +-----------+-----------+-------------+
+                \          |           /
+                 \         |          /
+                  \        |         /
+                   \       |        /
+                    \      |       /
+                     \     |      /
+                      \    |     /
+                       v   v    v
+            +-----------------------------+
+            |   Coleta de Dados (ETL)     |
+            +-----------------------------+
+                              |
+                              v
+            +------------------------------+
+            |  Handlers / Transformações   |
+            |                              |
+            | 1. Filtrar Pedidos           |
+            | 2. Consolidar Estoque        |
+            | 3. Previsão de Entrega       |
+            | 4. Combinação (Grau 2)       |
+            |    - Relatório Disponibilidade|
+            |    - Alerta de Reposição     |
+            | 5. Métricas de Vendas        |
+            +------------------------------+
+                              |
+                              v
+            +-----------------------------+
+            |       Carregamento          |
+            |    (CSV, SQLite, etc.)      |
+            +-----------------------------+
+                              |
+                              v
+            +-----------------------------+
+            |         Dashboard           |
+            |  (Visualização de análises  |
+            |         e latência)         |
+            +-----------------------------+
 
-> **Placeholder para Diagrama Gráfico:**  
+
+<!-- > **Placeholder para Diagrama Gráfico:**  
 > ![Diagrama do Pipeline APACHE AIRFLOW](https://www.google.com/url?sa=i&url=https%3A%2F%2Fstackacademy.com.br%2Fcurso-data-pipelines-com-apache-airflow%2F&psig=AOvVaw1bhUdlMoVknjFnuqTl3bG-&ust=1743057130521000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCNDg1_yPp4wDFQAAAAAdAAAAABA1)
-
+-->
 ---
 
 ## 4.3 Considerações de Concorrência e Paralelismo
