@@ -10,6 +10,11 @@ class DataFrame:
         if len(row) != len(self.columns):
             raise ValueError("Número de colunas incorreto.")
         self.rows.append(row)
+
+    def vstack(self, df):
+        if len(df.columns) != len(self.columns):
+            raise ValueError("Número de colunas incorreto.")
+        self.rows.extend(df.rows)
     
     def shape(self):
         return (len(self.rows), len(self.columns))
