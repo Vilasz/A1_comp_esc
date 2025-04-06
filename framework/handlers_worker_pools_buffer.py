@@ -43,20 +43,6 @@ def print_top_5(sorted_data: List[int]) -> None:
     top_5 = sorted_data[-1:-6:-1]
     print(f"Top 5 numbers: {top_5}")
 
-def pipeline():
-    random_list = generate_random_numbers(min_value, max_value, list_size)
-    print("Generated list")
-    print(random_list)
-    even_numbers = filter_even_numbers(random_list)
-    print("Even numbers")
-    print(even_numbers)
-    sorted_list = sort_list(even_numbers)
-    print("sorted list")
-    print(sorted_list)
-    print_top_5(sorted_list)
-
-# pipeline()
-
 def cpu_bound_handler_task(item):
     print(30 * "=")
     print("Simulating intensive work")
@@ -234,7 +220,7 @@ def dispatcher_thread_runner(
                 break
 
             # Unpacking data and ID
-            data, original_id = item_package
+            _, original_id = item_package
             print(f"[{handler_name} Dispatcher] Submitting ID: {original_id}")
             
             try:
@@ -252,7 +238,7 @@ def dispatcher_thread_runner(
                     lambda f: handle_result_and_signal(f, output_queue, input_queue)
                 )
             except Exception as submit_err:
-                print(f"[Dispatcher {os.getpid()}] Error submitting task {item}: {submit_err}")
+                print(f"[Dispatcher {os.getpid()}] Error submitting task {item_package}: {submit_err}")
                 # We got the item but failed to submit.
                 # We MUST call task_done here otherwise join() will hang.
                 input_queue.task_done()
@@ -273,89 +259,6 @@ def dispatcher_thread_runner(
         output_queue.put(SENTINEL)
 
     print(f"[{handler_name} Dispatcher {os.getpid()}/{Thread.native_id}] Finished.")
-
-
-# --- Orchestration Logic (Simplified) ---
-def manage_pool_b():
-    
-    print(30 * "=")
-    print("Creating buffers")
-    handler_b_input_queue = JoinableQueue(maxsize=20) # Input buffer for Handler B
-    handler_b_output_queue = JoinableQueue() # Output buffer for Handler B
-
-    MAX_WORKERS_B = os.cpu_count() or 2
-    total_tasks_to_add = 0
-    num_batches = 2
-    tasks_per_batch = 16
-
-    print(f"Creating ProcessPoolExecutor with {MAX_WORKERS_B} workers")
-    # Pool is created in the main process
-    pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS_B)
-
-    # Start the dispatcher in a separate Thread
-    # Pass queues, pool, and the callback factory
-    print(f"Starting dispatcher thread...")
-    dispatcher_thread = Thread(target=dispatcher, args=(
-        handler_b_input_queue,
-        handler_b_output_queue,
-        pool_b,
-        task_done_callback # Pass the factory itself
-    ), daemon=True) # Daemon allows main program to exit even if this hangs
-    dispatcher_thread.start()
-    print(f"Dispatcher thread started!")
-
-    # --- Simulating producer ---
-    # Simulate Producer (Handler A) putting data
-    print("Simulating handler A work")
-    # 2 iterações com A adicionando trabalho no buffer
-    for i in range(num_batches):
-        print(f"Batch {i+1}/{num_batches}: Adding {tasks_per_batch} tasks")
-        # Adding 4 tasks each time
-        for j in range(tasks_per_batch):
-            task_value = j % 5 + 1
-            handler_b_input_queue.put(task_value) # Add items with varying intensity
-            total_tasks_to_add += 1
-        
-    print(f"Total {total_tasks_to_add} tasks added to input queue")
-
-    #  --- Signal end of input ---
-    print("Adding SENTIEL (None) to input queue")
-    handler_b_input_queue.put(None) # Signal to dispatcher to stop
-
-    # --- Wait for completion ---
-    print("Waiting for input queue to be fully processed (join())")
-    handler_b_input_queue.join()
-    print("Input queue joined. All tasks submitted and processed.")
-
-    # --- Check Output Queue ---
-    print("Checking output queue for results...")
-    results_received = 0
-    while results_received < total_tasks_to_add:
-        try:
-            # Use timeout to avoid blocking forever if something went wrong
-            res = handler_b_output_queue.get(timeout=5.0)
-            print(f"Result received: {res}")
-            results_received += 1
-        except queue.Empty:
-            print("Output queue empty after waiting. Assuming complete (or error).")
-            if results_received != total_tasks_to_add:
-                print(f"!!! WARNING: Expected {total_tasks_to_add} results, got {results_received}")
-            break # Stop checking output
-
-    # --- Shutdown ---
-    print("Waiting for dispatcher thread to finish...")
-    dispatcher_thread.join(timeout=10) # Wait for dispatcher to exit cleanly
-    if dispatcher_thread.is_alive():
-        # Note: You can't forcefully terminate a thread like a process.
-        # If it hangs, it usually indicates a bug in the dispatcher loop
-        # or waiting logic (e.g., not handling sentinel correctly).
-        print("!!! WARNING: Dispatcher thread did not exit cleanly")
-
-    print("Shutting down worker pool...")
-    # shutdown should ideally be called after we're sure no more tasks
-    # will be submitted and after dispatcher is done.
-    pool_b.shutdown(wait=True)
-    print("Pool B finished.")
 
 # --- Guard for multiprocessing ---
 if __name__ == "__main__":
