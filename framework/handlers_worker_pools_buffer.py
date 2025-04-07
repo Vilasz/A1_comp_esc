@@ -1,6 +1,8 @@
 import concurrent.futures
 from multiprocessing import JoinableQueue, cpu_count, Process
 from threading import Thread
+import threading
+import traceback
 
 import os
 import time
@@ -15,13 +17,13 @@ from tqdm import tqdm
 # Module setup
 MIN_VALUE = 1
 MAX_VALUE = 1_000_000
-LIST_SIZE = 300_000
-NUM_LISTS_PER_RUN = 3
+LIST_SIZE = 300_00
+NUM_LISTS_PER_RUN = 5
 NUM_RUNS = 3
 TOTAL_LISTS = NUM_LISTS_PER_RUN * NUM_RUNS
 MAX_BUFFER_SIZE = 10
 
-NUM_WORKERS = cpu_count() or 1
+NUM_WORKERS = max((cpu_count() or 4) // 2, 1)
 
 # Sentinel object to signal the end of data
 # TODO: refine sentinel object
@@ -42,16 +44,6 @@ def sort_list(data: List[int]) -> List[int]:
 def print_top_5(sorted_data: List[int]) -> None:
     top_5 = sorted_data[-1:-6:-1]
     print(f"Top 5 numbers: {top_5}")
-
-def cpu_bound_handler_task(item):
-    print(30 * "=")
-    print("Simulating intensive work")
-    # Simulate CPU-intensive work
-    result = 0
-    for i in tqdm(range(item * 10**6)): # Scale work with item value
-        result += i
-    # print(f"Worker {os.getpid()} processed {item}")
-    return item * item
 
 # --- Stage 1: Filter Worker ---
 # The function gets the data in the id, makes the transformation and
@@ -75,6 +67,7 @@ def sort_worker(data_tuple: Tuple[List[int], str]) -> Tuple[List[int], str]:
     """
     # Decoupling data and id
     data, original_id = data_tuple
+
     print(f"[Sort Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
     sorted_data = sort_list(data)
     print(f"[Sort Worker {os.getpid()}] Done ID: {original_id} (Even Size: {len(sorted_data)})")
@@ -106,19 +99,23 @@ def handle_result_and_signal(
     original_id = "UNKNOWN"
     try:
         # Retrieve the original ID stored when submitting the task
-        original_id = future.original_id
+        # original_id = future.original_id
+        if hasattr(future, 'original_id'):
+            original_id = future.original_id
+        else:
+            print(f"!!! Callback Warning: Future missing original_id attribute!")
+
         # No output unless the task succeeds
         result_for_output = None
 
         if future.cancelled():
             print(f"Task cancelled (ID: {original_id})")
         elif future.exception():
-            print(f"!!! Task failed (ID: {original_id}) with exception: {future.exception()}")
+            exc = future.exception()
+            print(f"!!! Task failed (ID: {original_id}) with exception: {exc}")
         else:
             # Task succeeded, get the result package (data, id)
             worker_result_package = future.result()
-            print(f"Task completed (ID: {original_id})")
-
             # Only put the output if there *is* an output queue
             if output_queue is not None:
                 # Defining the result to be put in the output
@@ -131,6 +128,7 @@ def handle_result_and_signal(
                 print(f"Error putting result to output queue (ID: {original_id}), {q_put_error}")
     except Exception as callback_err:
         print(f"Error within callback logic (ID: {original_id}), {callback_err}")
+        traceback.print_exc()
 
     finally:
         # --- Input queue signaling ---
@@ -138,61 +136,12 @@ def handle_result_and_signal(
         # Because an item was originally taken from the input queue
         try:
             input_queue_ref.task_done()
-            print(f"Callback called task_done for ID {original_id}")
+            
         except ValueError:
             print(40 * "=")
             print(f"WARNING: task_done() called inappropriately (ID: {original_id}). This may indicate the queue logic doesn't match future handling")
-            pass
         except Exception as td_error:
             print(f"Error calling task_done in callback (ID: {original_id}) {td_error}")
-
-# def task_done_callback(output_queue, input_queue_ref):
-#     def callback(future):
-#         # Keeping track if we should put some somethign
-#         result_for_output = None
-#         try:
-#             if future.cancelled():
-#                 print("Task was cancelled")
-#             elif future.exception():
-#                 print(f"Task failed with exception: {future.exception()}")
-#             else:
-#                 result = future.result()
-#                 result_for_output = result
-#                 print(f"Task completed successfully with result: {result}")
-#         except Exception as e:
-#             print(f"Error retrievign results/status in callback: {e}")
-#             print("Exiting!")
-#             exit
-
-#         # --- Output queue handling
-#         # Put result in the output queue only if task succeeded and there's the output queue
-#         if result_for_output is not None and output_queue is not None:
-#             # Putting result in the output queue
-#             try:
-#                 output_queue.put(result_for_output)
-#             except Exception as e:
-#                 print(f"Error putting result to output queue: {e}")
-#                 print("Exiting!")
-#                 exit
-
-#         # --- Input Queue Signaling ---
-#         # Should crucially call task_done regardless of success/failure/outputting
-#         # Because an item was originally taken from the input queue
-#         try:
-#             input_queue_ref.task_done()
-#         except ValueError:
-#             # We might get here if task_done is called more times than put
-#             print(40 * "=")
-#             print("WARNING: task_done() called inappropriately. This may indicate the queue logic doesn't match future handling")
-#             print("Exiting!")
-#             exit
-#         except Exception as e:
-#             print(f"Error calling task_done in callback: {e}")
-#             print("Exiting!")
-#             exit
-
-
-#     return callback
 
 # --- Dispatcher logic ---
 def dispatcher_thread_runner(
@@ -200,88 +149,257 @@ def dispatcher_thread_runner(
     input_queue: JoinableQueue,
     output_queue: Optional[JoinableQueue],
     processing_function: Callable, # The handler function
-    worker_pool: concurrent.futures.Executor
+    worker_pool: concurrent.futures.Executor,
 ):
     """
     Monitors input queue, submit tasks to pool, uses callback for results/task_done.
     Runs until SENTINEL is received
     """
+    current_thread_id = threading.get_native_id()
     print(20* "=")
-    print(f"{handler_name} Dispatcher {os.getpid()}/{Thread.native_id} Started.")
-    active_task_count = 0
+    print(f"{handler_name} Dispatcher {os.getpid()}/{current_thread_id} Started.")
     
+    sentinel_received = False
+
     while True:
-        try: 
-            # Blocking get - wait for items indefinitely until SENTINEL
-            print("Removing item from buffer")
-            item_package = input_queue.get()
-            if item_package is SENTINEL: # Using None as SENTINEL
-                print(f"[Dispacther {os.getpid()}] SENTINEL received, exiting.")
-                break
-
-            # Unpacking data and ID
-            _, original_id = item_package
-            print(f"[{handler_name} Dispatcher] Submitting ID: {original_id}")
+        try:
+            # Using blocking get with timeout
+            item_package = input_queue.get(timeout=1.0)
             
-            try:
-                print("Submitting task to worker pool")
-                future = worker_pool.submit(processing_function, item_package)
-                active_task_count += 1
+            # --- Process the retrieved item ---
+            if item_package is SENTINEL:
+                print(f"[{handler_name} Dispatcher] GET result: SENTINEL received")
+                sentinel_received = True # Set the flag
+                input_queue.task_done()
 
-                # Store original_id with the future for the callback to 
-                # retrieve
+            elif item_package:
+                # Process actual data item
+                data, original_id = item_package
+                print(f"[{handler_name} Dispatcher] Processing Item ID {original_id}")
+
+                # Submitting to worker pool
+                future = worker_pool.submit(processing_function, item_package)
                 future.original_id = original_id
-                
-                # Create and add the callback for the specific task
-                # the_callback = callback_factory(output_queue, input_queue)
                 future.add_done_callback(
                     lambda f: handle_result_and_signal(f, output_queue, input_queue)
                 )
-            except Exception as submit_err:
-                print(f"[Dispatcher {os.getpid()}] Error submitting task {item_package}: {submit_err}")
-                # We got the item but failed to submit.
-                # We MUST call task_done here otherwise join() will hang.
+
+            else:
+                # Handle unexpected None case
+                print(f"[{handler_name} Dispatcher] GET result: Unexpected None or Empty")
+        
+        except queue.Empty:
+            # If we've received the sentinel and the queue is now empty,
+            # we can be confident all work is complete
+            if sentinel_received and input_queue.empty():
+                break
+            continue
+
+        except Exception as e:
+            print(f"!!! [{handler_name} Dispatcher] Unexpected error: {e}")
+            traceback.print_exc() # Print full traceback for the error
+            
+            # Call task_done if got an item but failed to process it
+            if 'item_package' in locals() and item_package is not SENTINEL:
                 input_queue.task_done()
             
-        except (EOFError, BrokenPipeError):
-            print(f"!!! [Dispatcher {os.getpid()}] Queue communication error, exiting.")
-            break # Exit loop on queue errors
-        except Exception as e:
-            print(f"!!! [Dispatcher {os.getpid()}] Unexpected error: {e}")
-            # Depending on error, might need to break or continue
-            time.sleep(1) # Avoid tight loop on continuous error
+            time.sleep(0.5) # Avoid tight loop on persistent error
 
-    # --- Sentinel received ---
-    print(f"[{handler_name} Dispatcher] Waiting for tasks associated with this stage to complete...")
-    # Propagate SENTINEL to the next stage if applicable
+    # Only propagating SENTINEL after ALL items have been processed
     if output_queue is not None:
         print(f"[{handler_name} Dispatcher] Propagating SENTINEL to next stage")
         output_queue.put(SENTINEL)
 
-    print(f"[{handler_name} Dispatcher {os.getpid()}/{Thread.native_id}] Finished.")
+    print(f"[{handler_name} Dispatcher {os.getpid()}/{current_thread_id}] Finished.")
+
+def run_pipeline_with_workers(num_workers: int) -> float:
+    """Run the pipeline with specified number of workers and return execution time"""
+    # Creating buffers for the handlers
+    queue_a_in = JoinableQueue(maxsize=TEST_MAX_BUFFER_SIZE)
+    queue_b_in = JoinableQueue(maxsize=TEST_MAX_BUFFER_SIZE)
+    queue_c_in = JoinableQueue(maxsize=TEST_MAX_BUFFER_SIZE)
+
+    # Creating worker pools with the specified number of workers
+    pools = []
+    pool_a = concurrent.futures.ProcessPoolExecutor(max_workers=num_workers)
+    pools.append(pool_a)
+    pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=num_workers)
+    pools.append(pool_b)
+    pool_c = concurrent.futures.ProcessPoolExecutor(max_workers=num_workers)
+    pools.append(pool_c)
+
+    # Start Dispatchers threads
+    dispatchers = []
+    dispatcher_a = Thread(target=dispatcher_thread_runner, args=(
+        f'Dispatcher A (Filter) w={num_workers}', queue_a_in, queue_b_in, filter_worker, pool_a), daemon=True)
+    dispatchers.append(dispatcher_a)
+    
+    dispatcher_b = Thread(target=dispatcher_thread_runner, args=(
+        f'Dispatcher B (Sort) w={num_workers}', queue_b_in, queue_c_in, sort_worker, pool_b), daemon=True)
+    dispatchers.append(dispatcher_b)
+    
+    dispatcher_c = Thread(target=dispatcher_thread_runner, args=(
+        f'Dispatcher C (Print) w={num_workers}', queue_c_in, None, print_worker, pool_c), daemon=True)
+    dispatchers.append(dispatcher_c)
+
+    for d in dispatchers:
+        d.start()
+
+    # Start timing
+    start_time = time.time()
+    
+    # Generate and queue data
+    list_ids_generated = []
+    for run in range(TEST_NUM_RUNS):
+        for i in range(TEST_NUM_LISTS_PER_RUN):
+            list_id = f'Workers{num_workers}-Run{run+1}-List{i+1}'
+            list_ids_generated.append(list_id)
+            
+            # Generate data
+            data = generate_random_numbers(MIN_VALUE, MAX_VALUE, TEST_LIST_SIZE)
+            # Put in the first handler queue
+            queue_a_in.put((data, list_id))
+            time.sleep(0.05)  # Optional simulate slower extraction
+
+    # Signal end of data
+    queue_a_in.put(SENTINEL)
+
+    # Wait for pipeline stages using queue joins
+    queue_a_in.join()
+    queue_b_in.join()
+    queue_c_in.join()
+
+    # Wait for dispatcher threads
+    for d in dispatchers:
+        d.join()
+
+    # Shutdown pools
+    for p in pools:
+        try:
+            p.shutdown(wait=True)
+        except Exception as pool_shutdown_error:
+            print(f"!!! Error shutting down pool: {pool_shutdown_error}")
+    
+    # Calculate elapsed time
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    return elapsed_time
+
+def benchmark_pipeline():
+    """Run benchmark tests with different worker counts and save results to CSV"""
+    results = []
+    
+    # Generate a timestamp for the filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_filename = f'pipeline_benchmark_{timestamp}.csv'
+    
+    print("=== PIPELINE BENCHMARK ===")
+    print(f"Testing with {len(WORKER_COUNTS)} different worker counts")
+    print(f"Each test will be repeated {NUM_RUNS_PER_COUNT} times")
+    print(f"Processing {TEST_LIST_SIZE * TEST_NUM_LISTS_PER_RUN * TEST_NUM_RUNS:,} numbers per test")
+    print(f"Results will be saved to: {csv_filename}")
+    
+    # Create detailed CSV file with test parameters
+    with open(csv_filename, 'w', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile)
+        
+        # Write test configuration
+        csv_writer.writerow(['Pipeline Benchmark - Configuration'])
+        csv_writer.writerow(['Timestamp', timestamp])
+        csv_writer.writerow(['List Size', TEST_LIST_SIZE])
+        csv_writer.writerow(['Lists Per Run', TEST_NUM_LISTS_PER_RUN])
+        csv_writer.writerow(['Number of Runs', TEST_NUM_RUNS])
+        csv_writer.writerow(['Buffer Size', TEST_MAX_BUFFER_SIZE])
+        csv_writer.writerow(['CPU Count', cpu_count()])
+        csv_writer.writerow([])  # Empty row for separation
+        
+        # Write header for results
+        csv_writer.writerow(['Worker Count', 'Run', 'Time (seconds)', 'Elements Processed', 'Elements Per Second'])
+        
+        # Test each worker count
+        for worker_count in WORKER_COUNTS:
+            print(f"\n--- Testing with {worker_count} workers ---")
+            times = []
+            
+            # Run multiple times for reliability
+            for run in range(NUM_RUNS_PER_COUNT):
+                print(f"  Run {run+1}/{NUM_RUNS_PER_COUNT}...")
+                elapsed_time = run_pipeline_with_workers(worker_count)
+                times.append(elapsed_time)
+                
+                # Calculate throughput
+                total_elements = TEST_LIST_SIZE * TEST_NUM_LISTS_PER_RUN * TEST_NUM_RUNS
+                elements_per_second = total_elements / elapsed_time
+                
+                print(f"  Completed in {elapsed_time:.2f} seconds ({elements_per_second:.2f} elements/sec)")
+                
+                # Save each run result
+                csv_writer.writerow([worker_count, run+1, elapsed_time, total_elements, elements_per_second])
+                csvfile.flush()  # Ensure data is written to file immediately
+            
+            # Calculate and display average
+            avg_time = sum(times) / len(times)
+            avg_throughput = (TEST_LIST_SIZE * TEST_NUM_LISTS_PER_RUN * TEST_NUM_RUNS) / avg_time
+            print(f"  Average time with {worker_count} workers: {avg_time:.2f} seconds ({avg_throughput:.2f} elements/sec)")
+            
+            # Store aggregate result for summary
+            results.append((worker_count, avg_time, avg_throughput))
+        
+        # Write summary section to CSV
+        csv_writer.writerow([])  # Empty row for separation
+        csv_writer.writerow(['Summary Results'])
+        csv_writer.writerow(['Worker Count', 'Avg Time (seconds)', 'Avg Elements Per Second'])
+        for worker_count, avg_time, avg_throughput in results:
+            csv_writer.writerow([worker_count, avg_time, avg_throughput])
+    
+    # Print summary of results to console
+    print("\n=== BENCHMARK RESULTS ===")
+    print("Worker Count | Avg. Time (s) | Elements/sec")
+    print("-------------|---------------|-------------")
+    for worker_count, avg_time, avg_throughput in results:
+        print(f"{worker_count:^11} | {avg_time:^13.2f} | {avg_throughput:,.2f}")
+    
+    print(f"\nDetailed results saved to '{csv_filename}'")
+    
+    # Find and report optimal worker count
+    optimal_result = min(results, key=lambda x: x[1])
+    print(f"\nOptimal worker count based on this benchmark: {optimal_result[0]}")
+    print(f"Optimal execution time: {optimal_result[1]:.2f} seconds")
+    print(f"Optimal throughput: {optimal_result[2]:,.2f} elements/second")
+    
+    return results, csv_filename
 
 # --- Guard for multiprocessing ---
 if __name__ == "__main__":
-    # manage_pool_b()
     print("--- Starting Pipeline Simulation ---")
     print(f"CPU Count: {os.cpu_count()}, Workers per stage: {NUM_WORKERS}")
     print(f"Lists: {TOTAL_LISTS}, Size per list: {LIST_SIZE:,}")
 
     # Creating buffers for the handlers
+    print("Creating joinable queues")
     queue_a_in = JoinableQueue(maxsize = MAX_BUFFER_SIZE)
     queue_b_in = JoinableQueue(maxsize = MAX_BUFFER_SIZE)
     queue_c_in = JoinableQueue(maxsize = MAX_BUFFER_SIZE)
+    print("Queues created")
 
     # --- Creating worker pools ---
     # One pool per stage
     # Keeping pools in a list for easier shutdown of the pools
+    print("Created ProcessPoolExecutors...")
     pools = []
-    pool_a = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    pools.append(pool_a)
-    pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    pools.append(pool_b)
-    pool_c = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    pools.append(pool_c)
+    pool_everything = concurrent.futures.ProcessPoolExecutor(max_workers=8)
+    pools.append(pool_everything)
+    
+    # This commented code creates dedicated worker pools
+    # pool_a = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    # pools.append(pool_a)
+    # pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    # pools.append(pool_b)
+    # pool_c = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    # pools.append(pool_c)
+    
+    print("Pools created")
 
     # --- Start Dispatchers threads ---
     # List for dispatcher for easy management
@@ -290,14 +408,14 @@ if __name__ == "__main__":
     # Dispatchers run in thread within the main process 
     # threads are even better, because the dispatchers are I/O bound.
     dispatcher_a = Thread(target=dispatcher_thread_runner, args=(
-        'Dispatcher Handler A (Filter)', queue_a_in, queue_b_in, filter_worker, pool_a), daemon= True)
+        'Dispatcher Handler A (Filter)', queue_a_in, queue_b_in, filter_worker, pool_everything), daemon= True)
     dispatchers.append(dispatcher_a)
     dispatcher_b = Thread(target=dispatcher_thread_runner, args=(
-        'Dispatcher Handler B (Sort)', queue_b_in, queue_c_in, sort_worker, pool_b), daemon= True)
+        'Dispatcher Handler B (Sort)', queue_b_in, queue_c_in, sort_worker, pool_everything), daemon= True)
     dispatchers.append(dispatcher_b)
     # Handler C's dispatcher hsa None for output_queue
     dispatcher_c = Thread(target=dispatcher_thread_runner, args=(
-        'Dispatcher Handler C (Print)', queue_c_in, None, print_worker, pool_c), daemon= True)
+        'Dispatcher Handler C (Print)', queue_c_in, None, print_worker, pool_everything), daemon= True)
     dispatchers.append(dispatcher_c)
 
     for d in dispatchers:
@@ -321,7 +439,7 @@ if __name__ == "__main__":
             # Put in the first handler queue
             queue_a_in.put((data, list_id))
             print(f"[Extractor] List (ID: {list_id}) put into queue A.")
-            time.sleep(0.05) # Optional simulate slower extraction
+            # time.sleep(0.05) # Optional simulate slower extraction
 
     print(f"[Extractor] Finished queuing {len(list_ids_generated)} lists.")
 
@@ -329,11 +447,28 @@ if __name__ == "__main__":
     print("[Extractor] Sending SENTINEL to Handler A...")
     queue_a_in.put(SENTINEL)
 
+    # --- Wait for Pipeline Stages using Queue Joins ---
+    # This is now the primary synchronization mechanism.
+    print("Waiting for Handler A processing (queue_a_in.join())...")
+    queue_a_in.join() # Waits for N data task_done + 1 sentinel task_done
+    print("Handler A finished processing all items.")
+
+    print("Waiting for Handler B processing (queue_b_in.join())...")
+    queue_b_in.join() # Waits for N data task_done + 1 sentinel task_done
+    print("Handler B finished processing all items.")
+
+    print("Waiting for Handler C processing (queue_c_in.join())...")
+    queue_c_in.join() # Waits for N data task_done + 1 sentinel task_done
+    print("Handler C finished processing all items.")
+
+    print("All queue stages joined. Proceeding to shutdown.")
+
     # --- Wait for Pipeline Completion (by joining dispatcher threads) ---
     print("Waiting for dispatcher threads to complete...")
     for i, d in enumerate(dispatchers):
         handler_name = d.name or f'Dispatcher {i + 1}'
-        d.join(timeout=5)
+        # d.join(timeout=5)
+        d.join()
 
         if d.is_alive():
             print(f"!!! {handler_name} thread did not exit cleanly after SENTINEL propagation!")
@@ -345,8 +480,9 @@ if __name__ == "__main__":
     print("Shutting down worker pools...")
     for i, p in enumerate(pools):
         try:
+            print(f"calling shutdown for pool {i + 1}")
             p.shutdown(wait=True)
-            print(f"Pool {i + 1} shut down")
+            print(f"Pool {i + 1} shutdown")
         except Exception as pool_shutdown_error:
             print(f"!!! Error shutting down pool {i + 1}: {pool_shutdown_error}")
     
