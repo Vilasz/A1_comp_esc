@@ -234,12 +234,12 @@ if __name__ == "__main__":
     # pools.append(pool_everything)
     
     # This commented section creates dedicated worker pools
-    pool_a = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    pools.append(pool_a)
-    pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    pools.append(pool_b)
-    pool_c = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    pools.append(pool_c)
+    # pool_a = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    # pools.append(pool_a)
+    # pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    # pools.append(pool_b)
+    # pool_c = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    # pools.append(pool_c)
     
     print("Pools created")
 
