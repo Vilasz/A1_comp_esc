@@ -1,5 +1,5 @@
 class DataFrame:
-    def __init__(self, columns : list[str], rows : list[list]:
+    def __init__(self, columns : list[str], rows : list[list]):
         self.columns = columns # lista de str com o nome das colunas
         self.rows = rows  # lista de listas ou lista de dicionários
 
@@ -25,7 +25,7 @@ class DataFrame:
             raise ValueError("Número de colunas incorreto.")
         self.rows.append(row)
 
-    def vstack(self, df : DataFrame):
+    def vstack(self, df):
         """
         Dado outro DataFrame com o mesmo número de colunas, empilha
         ele abaixo do DataFrame em que o método está sendo aplicado.
@@ -46,7 +46,7 @@ class DataFrame:
         """
         return (len(self.rows), len(self.columns))
 
-    def group_by(self, column_name : str, agg_fn : function, agg_columns=None : list[str]):
+    def group_by(self, column_name : str, agg_fn, agg_columns:list[str]=None):
         """
         Retorna uma versão agrupada do DataFrame pela coluna column_name,
         aplicando a função agg_fn nas colunas indicadas em agg_columns e
@@ -86,7 +86,7 @@ class DataFrame:
         new_columns = [column_name] + [f"{agg_fn.__name__}({col})" for col in agg_columns]
         return DataFrame(new_columns, new_rows)
 
-    def sort_by(self, column_name : str, ascending=True : bool):
+    def sort_by(self, column_name : str, ascending:bool=True):
         """
         Ordena as linhas do DataFrame com relação a coluna column_name.
         Se ascending = True a ordenação é crescente se = False é 
