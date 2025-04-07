@@ -8,6 +8,7 @@ import queue
 import random
 import sys
 from typing import List, Any, Optional, Callable
+from concurrent_pipeline import ConcurrentPipeline
 
 # Ajustamos o start method do multiprocessing para 'spawn' (ou 'forkserver')
 try:
@@ -73,131 +74,131 @@ def print_worker(chunk: List[int]) -> None:
 # =============================================================================
 #                  PIPELINE (mesmo conceito de antes)
 # =============================================================================
-class ConcurrentPipeline:
-    SENTINEL = None
+# class ConcurrentPipeline:
+#     SENTINEL = None
 
-    def __init__(self,
-                 num_workers: Optional[int] = None,
-                 max_buffer_size: int = 10,
-                 verbose: bool = False):
-        self.num_workers = num_workers or cpu_count()
-        self.max_buffer_size = max_buffer_size
-        self.verbose = verbose
+#     def __init__(self,
+#                  num_workers: Optional[int] = None,
+#                  max_buffer_size: int = 10,
+#                  verbose: bool = False):
+#         self.num_workers = num_workers or cpu_count()
+#         self.max_buffer_size = max_buffer_size
+#         self.verbose = verbose
 
-        self.stages = []
-        self.queues = []
-        self.pool = None
-        self.dispatchers = []
-        self.is_running = False
-        self.start_time = None
-        self.processed_items = 0
+#         self.stages = []
+#         self.queues = []
+#         self.pool = None
+#         self.dispatchers = []
+#         self.is_running = False
+#         self.start_time = None
+#         self.processed_items = 0
 
-    def add_stage(self, name: str, worker_fn: Callable[[Any], Any]) -> None:
-        stage = {'name': name, 'worker': worker_fn}
-        self.stages.append(stage)
+#     def add_stage(self, name: str, worker_fn: Callable[[Any], Any]) -> None:
+#         stage = {'name': name, 'worker': worker_fn}
+#         self.stages.append(stage)
 
-    def _setup_pipeline(self):
-        if not self.stages:
-            raise ValueError("No stages.")
-        self.queues = []
-        for _ in range(len(self.stages) + 1):
-            self.queues.append(JoinableQueue(maxsize=self.max_buffer_size))
+#     def _setup_pipeline(self):
+#         if not self.stages:
+#             raise ValueError("No stages.")
+#         self.queues = []
+#         for _ in range(len(self.stages) + 1):
+#             self.queues.append(JoinableQueue(maxsize=self.max_buffer_size))
 
-        # Executor
-        self.pool = concurrent.futures.ProcessPoolExecutor(max_workers=self.num_workers)
+#         # Executor
+#         self.pool = concurrent.futures.ProcessPoolExecutor(max_workers=self.num_workers)
 
-        # Cria threads
-        self.dispatchers = []
-        for i, st in enumerate(self.stages):
-            inp = self.queues[i]
-            outp = self.queues[i+1] if i < len(self.stages)-1 else None
-            dname = f"Dispatcher-{st['name']}"
+#         # Cria threads
+#         self.dispatchers = []
+#         for i, st in enumerate(self.stages):
+#             inp = self.queues[i]
+#             outp = self.queues[i+1] if i < len(self.stages)-1 else None
+#             dname = f"Dispatcher-{st['name']}"
 
-            t = threading.Thread(target=self._dispatcher_runner,
-                                 args=(dname, inp, outp, st['worker']),
-                                 daemon=True)
-            self.dispatchers.append(t)
+#             t = threading.Thread(target=self._dispatcher_runner,
+#                                  args=(dname, inp, outp, st['worker']),
+#                                  daemon=True)
+#             self.dispatchers.append(t)
 
-    def _dispatcher_runner(self,
-                           dispatcher_name: str,
-                           input_q: JoinableQueue,
-                           output_q: Optional[JoinableQueue],
-                           worker_fn: Callable[[Any], Any]):
-        sentinel_received = False
-        while True:
-            try:
-                data = input_q.get(timeout=1.0)
-                if data is self.SENTINEL:
-                    sentinel_received = True
-                    input_q.task_done()
-                else:
-                    # Submete ao pool
-                    f = self.pool.submit(worker_fn, data)
-                    f.add_done_callback(
-                        lambda fut: self._callback_result(fut, output_q, input_q)
-                    )
-            except queue.Empty:
-                if sentinel_received and input_q.empty():
-                    break
-                continue
-            except Exception as e:
-                traceback.print_exc()
-                time.sleep(0.2)
+#     def _dispatcher_runner(self,
+#                            dispatcher_name: str,
+#                            input_q: JoinableQueue,
+#                            output_q: Optional[JoinableQueue],
+#                            worker_fn: Callable[[Any], Any]):
+#         sentinel_received = False
+#         while True:
+#             try:
+#                 data = input_q.get(timeout=1.0)
+#                 if data is self.SENTINEL:
+#                     sentinel_received = True
+#                     input_q.task_done()
+#                 else:
+#                     # Submete ao pool
+#                     f = self.pool.submit(worker_fn, data)
+#                     f.add_done_callback(
+#                         lambda fut: self._callback_result(fut, output_q, input_q)
+#                     )
+#             except queue.Empty:
+#                 if sentinel_received and input_q.empty():
+#                     break
+#                 continue
+#             except Exception as e:
+#                 traceback.print_exc()
+#                 time.sleep(0.2)
 
-        if output_q:
-            output_q.put(self.SENTINEL)
+#         if output_q:
+#             output_q.put(self.SENTINEL)
 
-    def _callback_result(self,
-                         future: concurrent.futures.Future,
-                         output_q: Optional[JoinableQueue],
-                         input_q: JoinableQueue):
-        try:
-            if future.exception():
-                traceback.print_exc()
-            else:
-                res = future.result()
-                if output_q and res is not None:
-                    output_q.put(res)
-                    self.processed_items += 1
-        except:
-            traceback.print_exc()
-        finally:
-            input_q.task_done()
+#     def _callback_result(self,
+#                          future: concurrent.futures.Future,
+#                          output_q: Optional[JoinableQueue],
+#                          input_q: JoinableQueue):
+#         try:
+#             if future.exception():
+#                 traceback.print_exc()
+#             else:
+#                 res = future.result()
+#                 if output_q and res is not None:
+#                     output_q.put(res)
+#                     self.processed_items += 1
+#         except:
+#             traceback.print_exc()
+#         finally:
+#             input_q.task_done()
 
-    def start(self):
-        if self.is_running:
-            raise RuntimeError("Already running.")
-        self._setup_pipeline()
-        for d in self.dispatchers:
-            d.start()
-        self.is_running = True
-        self.start_time = time.time()
+#     def start(self):
+#         if self.is_running:
+#             raise RuntimeError("Already running.")
+#         self._setup_pipeline()
+#         for d in self.dispatchers:
+#             d.start()
+#         self.is_running = True
+#         self.start_time = time.time()
 
-    def feed_data(self, data: Any):
-        if not self.is_running:
-            raise RuntimeError("Not running.")
-        self.queues[0].put(data)
+#     def feed_data(self, data: Any):
+#         if not self.is_running:
+#             raise RuntimeError("Not running.")
+#         self.queues[0].put(data)
 
-    def end(self):
-        if not self.is_running:
-            return
-        self.queues[0].put(self.SENTINEL)
-        self.wait_completion()
-        self.shutdown()
+#     def end(self):
+#         if not self.is_running:
+#             return
+#         self.queues[0].put(self.SENTINEL)
+#         self.wait_completion()
+#         self.shutdown()
 
-    def wait_completion(self):
-        for q in self.queues:
-            q.join()
+#     def wait_completion(self):
+#         for q in self.queues:
+#             q.join()
 
-    def shutdown(self):
-        if self.pool:
-            self.pool.shutdown(wait=False)
-        for d in self.dispatchers:
-            d.join(2)
-        self.is_running = False
-        elapsed = time.time() - (self.start_time or time.time())
-        # se quiser, printa algo
-        # print(f"[Pipeline] Processed {self.processed_items} in {elapsed:.2f}s")
+#     def shutdown(self):
+#         if self.pool:
+#             self.pool.shutdown(wait=False)
+#         for d in self.dispatchers:
+#             d.join(2)
+#         self.is_running = False
+#         elapsed = time.time() - (self.start_time or time.time())
+#         # se quiser, printa algo
+#         # print(f"[Pipeline] Processed {self.processed_items} in {elapsed:.2f}s")
 
 
 # =============================================================================
@@ -239,7 +240,7 @@ def run_pipeline(num_workers: int, chunks: List[List[int]]) -> None:
 
     pipeline.start()
     for c in chunks:
-        pipeline.feed_data(c)
+        pipeline.add_batch([c])
     pipeline.end()
 
 
@@ -271,7 +272,7 @@ def main():
 
     # 2) Teste com diferentes números de workers
     cpu_total = cpu_count()
-    worker_values = [1, 2, 4, 6, 8, 10, cpu_total, max(1, cpu_total - 1)]
+    worker_values = [2, 4, 6, 8, 10, cpu_total, max(1, cpu_total - 1)]
     # Se quiser, pode ordenar e remover duplicados
     worker_values = list(set(worker_values))
     worker_values.sort()
