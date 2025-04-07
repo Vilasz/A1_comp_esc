@@ -54,7 +54,8 @@ class ConcurrentPipeline:
 
     def __init__(
         self,
-        max_workers_per_stage: Optional[int] = None,
+        # max_workers_per_stage: Optional[int] = None,
+        num_workers: Optional[int] = None,
         max_buffer_size: int = 10,
         show_progress: bool = True,
         verbose: bool = True
@@ -69,7 +70,8 @@ class ConcurrentPipeline:
             show_progress: Whether to show progress bars during processing.
             verbose: Whether to print detailed logs.
         """
-        self.max_workers_per_stage = max_workers_per_stage or max(1, (cpu_count() or 4) // 2)
+        # self.max_workers_per_stage = max_workers_per_stage or max(1, (cpu_count() or 4) // 2)
+        self.num_workers = num_workers or cpu_count()
         self.max_buffer_size = max_buffer_size
         self.show_progress = show_progress
         self.verbose = verbose
@@ -77,7 +79,7 @@ class ConcurrentPipeline:
         # Pipeline components
         self.stages = []
         self.queues = []
-        self.pools = []
+        # self.pools = []
         self.dispatchers = []
 
         # Tracking
@@ -85,8 +87,10 @@ class ConcurrentPipeline:
         self.start_time = None
         self.processed_items = 0
 
+        # if self.verbose:
+        #     print(f"Initialized pipeline - Workers per stage: {self.max_workers_per_stage}")
         if self.verbose:
-            print(f"Initialized pipeline - Workers per stage: {self.max_workers_per_stage}")
+            print(f"Initialized pipeline - Number of workers in pool: {self.num_workers}")
 
     def add_stage(self, name: str, worker_function: Callable, max_workers: Optional[int] = None) -> None:
         """
@@ -101,12 +105,14 @@ class ConcurrentPipeline:
         stage = {
             'name': name,
             'worker_function': worker_function,
-            'max_workers': max_workers or self.max_workers_per_stage
+            # 'max_workers': max_workers or self.max_workers_per_stage
         }
         self.stages.append(stage)
 
+        # if self.verbose:
+        #     print(f"Added stage: '{name}' with {stage['max_workers']} workers")
         if self.verbose:
-            print(f"Added stage: '{name}' with {stage['max_workers']} workers")
+            print(f"Added stage: '{name}'")
 
     def _setup_pipeline(self) -> None:
         """
@@ -122,11 +128,16 @@ class ConcurrentPipeline:
             # and then one output queue per stage (which is input for the next stage)
             self.queues.append(JoinableQueue(maxsize=self.max_buffer_size))
 
+        # This commented section creates one pool per stage
         # Create process pools (one per stage)
         self.pools = []
-        for stage in self.stages:
-            pool = concurrent.futures.ProcessPoolExecutor(max_workers=stage['max_workers'])
-            self.pools.append(pool)
+        # for stage in self.stages:
+        #     pool = concurrent.futures.ProcessPoolExecutor(max_workers=stage['max_workers'])
+        #     self.pools.append(pool)
+
+        # Creating worker pool
+        pool = concurrent.futures.ProcessPoolExecutor(max_workers=self.num_workers)
+        self.pools.append(pool)
 
         # Create dispatcher threads (one per stage)
         self.dispatchers = []
@@ -142,7 +153,8 @@ class ConcurrentPipeline:
                     input_queue,
                     output_queue,
                     stage['worker_function'],
-                    self.pools[i]
+                    # self.pools[i]
+                    self.pools[0]
                 ),
                 daemon=True
             )
@@ -441,7 +453,7 @@ if __name__ == "__main__":
     
     # Create the pipeline with 3 stages
     print("Creating pipeline class")
-    pipeline = ConcurrentPipeline(max_workers_per_stage=4, max_buffer_size=30, show_progress=True, verbose=True)
+    pipeline = ConcurrentPipeline(max_buffer_size=30, show_progress=True, verbose=True)
     
     # Add processing stages
     print("Adding stages")
