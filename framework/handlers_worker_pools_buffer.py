@@ -18,7 +18,7 @@ from tqdm import tqdm
 MIN_VALUE = 1
 MAX_VALUE = 1_000_000
 LIST_SIZE = 300_00
-NUM_LISTS_PER_RUN = 5
+NUM_LISTS_PER_RUN = 10
 NUM_RUNS = 3
 TOTAL_LISTS = NUM_LISTS_PER_RUN * NUM_RUNS
 MAX_BUFFER_SIZE = 10
@@ -212,164 +212,6 @@ def dispatcher_thread_runner(
 
     print(f"[{handler_name} Dispatcher {os.getpid()}/{current_thread_id}] Finished.")
 
-def run_pipeline_with_workers(num_workers: int) -> float:
-    """Run the pipeline with specified number of workers and return execution time"""
-    # Creating buffers for the handlers
-    queue_a_in = JoinableQueue(maxsize=TEST_MAX_BUFFER_SIZE)
-    queue_b_in = JoinableQueue(maxsize=TEST_MAX_BUFFER_SIZE)
-    queue_c_in = JoinableQueue(maxsize=TEST_MAX_BUFFER_SIZE)
-
-    # Creating worker pools with the specified number of workers
-    pools = []
-    pool_a = concurrent.futures.ProcessPoolExecutor(max_workers=num_workers)
-    pools.append(pool_a)
-    pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=num_workers)
-    pools.append(pool_b)
-    pool_c = concurrent.futures.ProcessPoolExecutor(max_workers=num_workers)
-    pools.append(pool_c)
-
-    # Start Dispatchers threads
-    dispatchers = []
-    dispatcher_a = Thread(target=dispatcher_thread_runner, args=(
-        f'Dispatcher A (Filter) w={num_workers}', queue_a_in, queue_b_in, filter_worker, pool_a), daemon=True)
-    dispatchers.append(dispatcher_a)
-    
-    dispatcher_b = Thread(target=dispatcher_thread_runner, args=(
-        f'Dispatcher B (Sort) w={num_workers}', queue_b_in, queue_c_in, sort_worker, pool_b), daemon=True)
-    dispatchers.append(dispatcher_b)
-    
-    dispatcher_c = Thread(target=dispatcher_thread_runner, args=(
-        f'Dispatcher C (Print) w={num_workers}', queue_c_in, None, print_worker, pool_c), daemon=True)
-    dispatchers.append(dispatcher_c)
-
-    for d in dispatchers:
-        d.start()
-
-    # Start timing
-    start_time = time.time()
-    
-    # Generate and queue data
-    list_ids_generated = []
-    for run in range(TEST_NUM_RUNS):
-        for i in range(TEST_NUM_LISTS_PER_RUN):
-            list_id = f'Workers{num_workers}-Run{run+1}-List{i+1}'
-            list_ids_generated.append(list_id)
-            
-            # Generate data
-            data = generate_random_numbers(MIN_VALUE, MAX_VALUE, TEST_LIST_SIZE)
-            # Put in the first handler queue
-            queue_a_in.put((data, list_id))
-            time.sleep(0.05)  # Optional simulate slower extraction
-
-    # Signal end of data
-    queue_a_in.put(SENTINEL)
-
-    # Wait for pipeline stages using queue joins
-    queue_a_in.join()
-    queue_b_in.join()
-    queue_c_in.join()
-
-    # Wait for dispatcher threads
-    for d in dispatchers:
-        d.join()
-
-    # Shutdown pools
-    for p in pools:
-        try:
-            p.shutdown(wait=True)
-        except Exception as pool_shutdown_error:
-            print(f"!!! Error shutting down pool: {pool_shutdown_error}")
-    
-    # Calculate elapsed time
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    
-    return elapsed_time
-
-def benchmark_pipeline():
-    """Run benchmark tests with different worker counts and save results to CSV"""
-    results = []
-    
-    # Generate a timestamp for the filename
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_filename = f'pipeline_benchmark_{timestamp}.csv'
-    
-    print("=== PIPELINE BENCHMARK ===")
-    print(f"Testing with {len(WORKER_COUNTS)} different worker counts")
-    print(f"Each test will be repeated {NUM_RUNS_PER_COUNT} times")
-    print(f"Processing {TEST_LIST_SIZE * TEST_NUM_LISTS_PER_RUN * TEST_NUM_RUNS:,} numbers per test")
-    print(f"Results will be saved to: {csv_filename}")
-    
-    # Create detailed CSV file with test parameters
-    with open(csv_filename, 'w', newline='') as csvfile:
-        csv_writer = csv.writer(csvfile)
-        
-        # Write test configuration
-        csv_writer.writerow(['Pipeline Benchmark - Configuration'])
-        csv_writer.writerow(['Timestamp', timestamp])
-        csv_writer.writerow(['List Size', TEST_LIST_SIZE])
-        csv_writer.writerow(['Lists Per Run', TEST_NUM_LISTS_PER_RUN])
-        csv_writer.writerow(['Number of Runs', TEST_NUM_RUNS])
-        csv_writer.writerow(['Buffer Size', TEST_MAX_BUFFER_SIZE])
-        csv_writer.writerow(['CPU Count', cpu_count()])
-        csv_writer.writerow([])  # Empty row for separation
-        
-        # Write header for results
-        csv_writer.writerow(['Worker Count', 'Run', 'Time (seconds)', 'Elements Processed', 'Elements Per Second'])
-        
-        # Test each worker count
-        for worker_count in WORKER_COUNTS:
-            print(f"\n--- Testing with {worker_count} workers ---")
-            times = []
-            
-            # Run multiple times for reliability
-            for run in range(NUM_RUNS_PER_COUNT):
-                print(f"  Run {run+1}/{NUM_RUNS_PER_COUNT}...")
-                elapsed_time = run_pipeline_with_workers(worker_count)
-                times.append(elapsed_time)
-                
-                # Calculate throughput
-                total_elements = TEST_LIST_SIZE * TEST_NUM_LISTS_PER_RUN * TEST_NUM_RUNS
-                elements_per_second = total_elements / elapsed_time
-                
-                print(f"  Completed in {elapsed_time:.2f} seconds ({elements_per_second:.2f} elements/sec)")
-                
-                # Save each run result
-                csv_writer.writerow([worker_count, run+1, elapsed_time, total_elements, elements_per_second])
-                csvfile.flush()  # Ensure data is written to file immediately
-            
-            # Calculate and display average
-            avg_time = sum(times) / len(times)
-            avg_throughput = (TEST_LIST_SIZE * TEST_NUM_LISTS_PER_RUN * TEST_NUM_RUNS) / avg_time
-            print(f"  Average time with {worker_count} workers: {avg_time:.2f} seconds ({avg_throughput:.2f} elements/sec)")
-            
-            # Store aggregate result for summary
-            results.append((worker_count, avg_time, avg_throughput))
-        
-        # Write summary section to CSV
-        csv_writer.writerow([])  # Empty row for separation
-        csv_writer.writerow(['Summary Results'])
-        csv_writer.writerow(['Worker Count', 'Avg Time (seconds)', 'Avg Elements Per Second'])
-        for worker_count, avg_time, avg_throughput in results:
-            csv_writer.writerow([worker_count, avg_time, avg_throughput])
-    
-    # Print summary of results to console
-    print("\n=== BENCHMARK RESULTS ===")
-    print("Worker Count | Avg. Time (s) | Elements/sec")
-    print("-------------|---------------|-------------")
-    for worker_count, avg_time, avg_throughput in results:
-        print(f"{worker_count:^11} | {avg_time:^13.2f} | {avg_throughput:,.2f}")
-    
-    print(f"\nDetailed results saved to '{csv_filename}'")
-    
-    # Find and report optimal worker count
-    optimal_result = min(results, key=lambda x: x[1])
-    print(f"\nOptimal worker count based on this benchmark: {optimal_result[0]}")
-    print(f"Optimal execution time: {optimal_result[1]:.2f} seconds")
-    print(f"Optimal throughput: {optimal_result[2]:,.2f} elements/second")
-    
-    return results, csv_filename
-
 # --- Guard for multiprocessing ---
 if __name__ == "__main__":
     print("--- Starting Pipeline Simulation ---")
@@ -388,16 +230,16 @@ if __name__ == "__main__":
     # Keeping pools in a list for easier shutdown of the pools
     print("Created ProcessPoolExecutors...")
     pools = []
-    pool_everything = concurrent.futures.ProcessPoolExecutor(max_workers=8)
-    pools.append(pool_everything)
+    # pool_everything = concurrent.futures.ProcessPoolExecutor(max_workers=8)
+    # pools.append(pool_everything)
     
-    # This commented code creates dedicated worker pools
-    # pool_a = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    # pools.append(pool_a)
-    # pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    # pools.append(pool_b)
-    # pool_c = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
-    # pools.append(pool_c)
+    # This commented section creates dedicated worker pools
+    pool_a = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    pools.append(pool_a)
+    pool_b = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    pools.append(pool_b)
+    pool_c = concurrent.futures.ProcessPoolExecutor(max_workers=NUM_WORKERS)
+    pools.append(pool_c)
     
     print("Pools created")
 
@@ -408,14 +250,14 @@ if __name__ == "__main__":
     # Dispatchers run in thread within the main process 
     # threads are even better, because the dispatchers are I/O bound.
     dispatcher_a = Thread(target=dispatcher_thread_runner, args=(
-        'Dispatcher Handler A (Filter)', queue_a_in, queue_b_in, filter_worker, pool_everything), daemon= True)
+        'Dispatcher Handler A (Filter)', queue_a_in, queue_b_in, filter_worker, pool_a), daemon= True)
     dispatchers.append(dispatcher_a)
     dispatcher_b = Thread(target=dispatcher_thread_runner, args=(
-        'Dispatcher Handler B (Sort)', queue_b_in, queue_c_in, sort_worker, pool_everything), daemon= True)
+        'Dispatcher Handler B (Sort)', queue_b_in, queue_c_in, sort_worker, pool_b), daemon= True)
     dispatchers.append(dispatcher_b)
     # Handler C's dispatcher hsa None for output_queue
     dispatcher_c = Thread(target=dispatcher_thread_runner, args=(
-        'Dispatcher Handler C (Print)', queue_c_in, None, print_worker, pool_everything), daemon= True)
+        'Dispatcher Handler C (Print)', queue_c_in, None, print_worker, pool_c), daemon= True)
     dispatchers.append(dispatcher_c)
 
     for d in dispatchers:
@@ -463,8 +305,14 @@ if __name__ == "__main__":
 
     print("All queue stages joined. Proceeding to shutdown.")
 
+    print("Time count stopped")
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
     # --- Wait for Pipeline Completion (by joining dispatcher threads) ---
-    print("Waiting for dispatcher threads to complete...")
+    print("*============================================================*")
+    print("|Shutting down pipeline components. This may take a moment...|")
+    print("*============================================================*")
     for i, d in enumerate(dispatchers):
         handler_name = d.name or f'Dispatcher {i + 1}'
         # d.join(timeout=5)
@@ -485,9 +333,6 @@ if __name__ == "__main__":
             print(f"Pool {i + 1} shutdown")
         except Exception as pool_shutdown_error:
             print(f"!!! Error shutting down pool {i + 1}: {pool_shutdown_error}")
-    
-    end_time = time.time()
-    elapsed_time = end_time - start_time
 
     print("\n--- Pipeline Finished ---")
     print(f"Processed {len(list_ids_generated)} lists.")
