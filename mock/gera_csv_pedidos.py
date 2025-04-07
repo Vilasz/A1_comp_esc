@@ -1,6 +1,8 @@
 import csv
 import random
 
+N = 10000
+
 def gerar_pedidos_csv(qtd_pedidos, nome_arquivo="mock_data_db.csv"):
     produtos_disponiveis = [
         "Notebook", "Mouse", "Teclado", "Smartphone", "Fone de Ouvido",
@@ -37,4 +39,4 @@ def gerar_pedidos_csv(qtd_pedidos, nome_arquivo="mock_data_db.csv"):
 
 # Exemplo de uso
 if __name__ == "__main__":
-    gerar_pedidos_csv(10000)  # Gere quantos quiser aqui
+    gerar_pedidos_csv(N)  # Gere quantos quiser aqui
