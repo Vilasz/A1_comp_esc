@@ -11,6 +11,36 @@ from typing import List, Any, Tuple, Optional, Callable
 from tqdm import tqdm
 import random
 
+# Functions for simulating data pipeline
+def generate_random_numbers(min_val: int, max_val: int, size: int):
+    """Generate a list of random numbers"""
+    random_list = random.choices(range(min_val, max_val + 1), k=size)
+    return random_list
+
+def filter_worker(data_tuple):
+    """Filter even numbers from the list"""
+    data, original_id = data_tuple
+    print(f"[Filter Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
+    filtered_data = [number for number in data if number % 2 == 0]
+    print(f"[Filter Worker {os.getpid()}] Done ID: {original_id} (Even Size: {len(filtered_data)})")
+    return filtered_data, original_id
+
+def sort_worker(data_tuple):
+    """Sort the filtered list"""
+    data, original_id = data_tuple
+    print(f"[Sort Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
+    sorted_data = sorted(data)
+    print(f"[Sort Worker {os.getpid()}] Done ID: {original_id} (Sorted Size: {len(sorted_data)})")
+    return sorted_data, original_id
+
+def print_worker(data_tuple):
+    """Print the top 5 values from the sorted list"""
+    data, original_id = data_tuple
+    print(f"[Print Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
+    top_5 = data[-1:-6:-1] if len(data) >= 5 else data[-1::-1]
+    print(f"[ID: {original_id}] Top 5 numbers: {top_5}")
+    return None, original_id
+
 class ConcurrentPipeline:
     """
     A concurrent pipeline processor that handles multi-stage data processing
@@ -400,36 +430,6 @@ class ConcurrentPipeline:
         print(f"Processed {self.processed_items} items in {elapsed:.2f} seconds")
 
 if __name__ == "__main__":
-    # Functions for simulating data pipeline
-    def generate_random_numbers(min_val: int, max_val: int, size: int):
-        """Generate a list of random numbers"""
-        random_list = random.choices(range(min_val, max_val + 1), k=size)
-        return random_list
-
-    def filter_worker(data_tuple):
-        """Filter even numbers from the list"""
-        data, original_id = data_tuple
-        print(f"[Filter Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
-        filtered_data = [number for number in data if number % 2 == 0]
-        print(f"[Filter Worker {os.getpid()}] Done ID: {original_id} (Even Size: {len(filtered_data)})")
-        return filtered_data, original_id
-
-    def sort_worker(data_tuple):
-        """Sort the filtered list"""
-        data, original_id = data_tuple
-        print(f"[Sort Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
-        sorted_data = sorted(data)
-        print(f"[Sort Worker {os.getpid()}] Done ID: {original_id} (Sorted Size: {len(sorted_data)})")
-        return sorted_data, original_id
-
-    def print_worker(data_tuple):
-        """Print the top 5 values from the sorted list"""
-        data, original_id = data_tuple
-        print(f"[Print Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
-        top_5 = data[-1:-6:-1] if len(data) >= 5 else data[-1::-1]
-        print(f"[ID: {original_id}] Top 5 numbers: {top_5}")
-        return None, original_id
-
     # Configuration
     MIN_VALUE = 1
     MAX_VALUE = 1_000_000
@@ -441,7 +441,7 @@ if __name__ == "__main__":
     
     # Create the pipeline with 3 stages
     print("Creating pipeline class")
-    pipeline = ConcurrentPipeline(max_workers_per_stage=2, max_buffer_size=30, show_progress=True, verbose=True)
+    pipeline = ConcurrentPipeline(max_workers_per_stage=4, max_buffer_size=30, show_progress=True, verbose=True)
     
     # Add processing stages
     print("Adding stages")
@@ -463,16 +463,17 @@ if __name__ == "__main__":
     for j in range(NUM_RUNS):
         print(50 * "=")
         print(f"Run {j + 1}/{NUM_RUNS}")
+        data_items = []
         for i in range(NUM_LISTS):
-            data_items = []
             list_id = f'List-{i+1}'
             data = generate_random_numbers(MIN_VALUE, MAX_VALUE, LIST_SIZE)
             data_items.append((data, list_id))
             # pipeline.run_batch(data_items)
-            print(f"Adding {i},{j} data batch")
             
             # Adds data to be processed
-            pipeline.add_batch(data_items)
+        print(f"Adding {i} data batch")
+        pipeline.add_batch(data_items)
+        time.sleep(0.05)
     
     # Run the pipeline with all data
     end_time = time.time()
