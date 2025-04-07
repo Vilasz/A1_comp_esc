@@ -11,35 +11,32 @@ from typing import List, Any, Tuple, Optional, Callable
 from tqdm import tqdm
 import random
 
-# Functions for simulating data pipeline
+# Functions for simulating data pipeline - simplified to handle just data, not (data, id) tuples
 def generate_random_numbers(min_val: int, max_val: int, size: int):
     """Generate a list of random numbers"""
     random_list = random.choices(range(min_val, max_val + 1), k=size)
     return random_list
 
-def filter_worker(data_tuple):
+def filter_worker(data):
     """Filter even numbers from the list"""
-    data, original_id = data_tuple
-    print(f"[Filter Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
+    print(f"[Filter Worker {os.getpid()}] Processing (Size: {len(data)})")
     filtered_data = [number for number in data if number % 2 == 0]
-    print(f"[Filter Worker {os.getpid()}] Done ID: {original_id} (Even Size: {len(filtered_data)})")
-    return filtered_data, original_id
+    print(f"[Filter Worker {os.getpid()}] Done (Even Size: {len(filtered_data)})")
+    return filtered_data
 
-def sort_worker(data_tuple):
+def sort_worker(data):
     """Sort the filtered list"""
-    data, original_id = data_tuple
-    print(f"[Sort Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
+    print(f"[Sort Worker {os.getpid()}] Processing (Size: {len(data)})")
     sorted_data = sorted(data)
-    print(f"[Sort Worker {os.getpid()}] Done ID: {original_id} (Sorted Size: {len(sorted_data)})")
-    return sorted_data, original_id
+    print(f"[Sort Worker {os.getpid()}] Done (Sorted Size: {len(sorted_data)})")
+    return sorted_data
 
-def print_worker(data_tuple):
+def print_worker(data):
     """Print the top 5 values from the sorted list"""
-    data, original_id = data_tuple
-    print(f"[Print Worker {os.getpid()}] Processing ID: {original_id} (Size: {len(data)})")
+    print(f"[Print Worker {os.getpid()}] Processing (Size: {len(data)})")
     top_5 = data[-1:-6:-1] if len(data) >= 5 else data[-1::-1]
-    print(f"[ID: {original_id}] Top 5 numbers: {top_5}")
-    return None, original_id
+    print(f"Top 5 numbers: {top_5}")
+    return None
 
 class ConcurrentPipeline:
     """
@@ -54,7 +51,6 @@ class ConcurrentPipeline:
 
     def __init__(
         self,
-        # max_workers_per_stage: Optional[int] = None,
         num_workers: Optional[int] = None,
         max_buffer_size: int = 10,
         show_progress: bool = True,
@@ -64,13 +60,12 @@ class ConcurrentPipeline:
         Initialize the pipeline processor.
 
         Args:
-            max_workers_per_stage: Maximum number of worker processes per stage.
-                                Defaults to half of CPU count.
+            num_workers: Number of worker processes in the pool.
+                         Defaults to CPU count.
             max_buffer_size: Maximum size of the buffer queues between stages.
             show_progress: Whether to show progress bars during processing.
             verbose: Whether to print detailed logs.
         """
-        # self.max_workers_per_stage = max_workers_per_stage or max(1, (cpu_count() or 4) // 2)
         self.num_workers = num_workers or cpu_count()
         self.max_buffer_size = max_buffer_size
         self.show_progress = show_progress
@@ -79,7 +74,7 @@ class ConcurrentPipeline:
         # Pipeline components
         self.stages = []
         self.queues = []
-        # self.pools = []
+        self.pools = []
         self.dispatchers = []
 
         # Tracking
@@ -87,30 +82,24 @@ class ConcurrentPipeline:
         self.start_time = None
         self.processed_items = 0
 
-        # if self.verbose:
-        #     print(f"Initialized pipeline - Workers per stage: {self.max_workers_per_stage}")
         if self.verbose:
             print(f"Initialized pipeline - Number of workers in pool: {self.num_workers}")
 
-    def add_stage(self, name: str, worker_function: Callable, max_workers: Optional[int] = None) -> None:
+    def add_stage(self, name: str, worker_function: Callable) -> None:
         """
         Add a processing stage to the pipeline.
 
         Args:
             name: Name of the stage for logging
-            worker_function: Function that processes data. Must accept a tuple (data, id)
-                        and return a tuple (processed_data, id)
-            max_workers: Optional override for number of workers for this specific stage
+            worker_function: Function that processes data. Must accept data
+                        and return processed data.
         """
         stage = {
             'name': name,
             'worker_function': worker_function,
-            # 'max_workers': max_workers or self.max_workers_per_stage
         }
         self.stages.append(stage)
 
-        # if self.verbose:
-        #     print(f"Added stage: '{name}' with {stage['max_workers']} workers")
         if self.verbose:
             print(f"Added stage: '{name}'")
 
@@ -127,17 +116,15 @@ class ConcurrentPipeline:
             # The +1 is because we need an input queue for the first stage
             # and then one output queue per stage (which is input for the next stage)
             self.queues.append(JoinableQueue(maxsize=self.max_buffer_size))
-
-        # This commented section creates one pool per stage
-        # Create process pools (one per stage)
-        self.pools = []
-        # for stage in self.stages:
-        #     pool = concurrent.futures.ProcessPoolExecutor(max_workers=stage['max_workers'])
+        
+        # for i in range(len(self.stages) + 1):
+        #     # The +1 is because we need an input queue for the first stage
+        #     # and then one output queue per stage (which is input for the next stage)
+        #     pool = concurrent.futures.ProcessPoolExecutor(max_workers=self.num_workers)
         #     self.pools.append(pool)
 
         # Creating worker pool
-        pool = concurrent.futures.ProcessPoolExecutor(max_workers=self.num_workers)
-        self.pools.append(pool)
+        self.pool = concurrent.futures.ProcessPoolExecutor(max_workers=self.num_workers)
 
         # Create dispatcher threads (one per stage)
         self.dispatchers = []
@@ -154,7 +141,7 @@ class ConcurrentPipeline:
                     output_queue,
                     stage['worker_function'],
                     # self.pools[i]
-                    self.pools[0]
+                    self.pool
                 ),
                 daemon=True
             )
@@ -177,34 +164,34 @@ class ConcurrentPipeline:
             print(f"{handler_name} Dispatcher {os.getpid()}/{current_thread_id} Started.")
 
         sentinel_received = False
-        # active_futures = set()  # Track active futures
 
         while True:
             try:
                 # Using blocking get with timeout
-                item_package = input_queue.get(timeout=1.0)
-                
+                data = input_queue.get(timeout=1.0)
+
                 # --- Process the retrieved item ---
-                if item_package is self.SENTINEL:
+                if data is self.SENTINEL:
                     print(f"[{handler_name} Dispatcher] GET result: SENTINEL received")
-                    sentinel_received = True # Set the flag
+                    sentinel_received = True  # Set the flag
                     input_queue.task_done()
 
-                elif item_package:
+                elif data is not None:
                     # Process actual data item
-                    data, original_id = item_package
-                    print(f"[{handler_name} Dispatcher] Processing Item ID {original_id}")
+                    task_id = str(uuid.uuid4())[:8]  # Generate a short ID for logging
+                    print(f"[{handler_name} Dispatcher] Processing Item ID {task_id}")
 
                     # Submitting to worker pool
-                    future = worker_pool.submit(processing_function, item_package)
-                    future.original_id = original_id
+                    future = worker_pool.submit(processing_function, data)
+                    future.task_id = task_id
                     future.add_done_callback(
-                        lambda f: self._handle_result_and_signal(f, output_queue, input_queue)
+                        lambda f: self._handle_result_and_signal(f, output_queue, input_queue, handler_name)
                     )
 
                 else:
                     # Handle unexpected None case
                     print(f"[{handler_name} Dispatcher] GET result: Unexpected None or Empty")
+                    input_queue.task_done()
             
             except queue.Empty:
                 # If we've received the sentinel and the queue is now empty,
@@ -215,13 +202,13 @@ class ConcurrentPipeline:
 
             except Exception as e:
                 print(f"!!! [{handler_name} Dispatcher] Unexpected error: {e}")
-                traceback.print_exc() # Print full traceback for the error
+                traceback.print_exc()  # Print full traceback for the error
                 
                 # Call task_done if got an item but failed to process it
-                if 'item_package' in locals() and item_package is not self.SENTINEL:
+                if 'data' in locals() and data is not self.SENTINEL:
                     input_queue.task_done()
                 
-                time.sleep(0.5) # Avoid tight loop on persistent error
+                time.sleep(0.5)  # Avoid tight loop on persistent error
 
         # Propagate SENTINEL after all processing is done
         if output_queue is not None:
@@ -236,44 +223,42 @@ class ConcurrentPipeline:
         self,
         future: concurrent.futures.Future,
         output_queue: Optional[JoinableQueue],
-        input_queue_ref: JoinableQueue
+        input_queue_ref: JoinableQueue,
+        handler_name: str
     ) -> None:
         """
-        Callback helper to handle result tuple, put to next queue, call task_done
+        Callback helper to handle result, put to next queue, call task_done
         """
-        original_id = "UNKNOWN"
+        task_id = "UNKNOWN"
         try:
-            if hasattr(future, 'original_id'):
-                original_id = future.original_id
-            else:
-                if self.verbose:
-                    print(f"!!! Callback Warning: Future missing original_id attribute!")
+            if hasattr(future, 'task_id'):
+                task_id = future.task_id
 
             # No output unless the task succeeds
             result_for_output = None
 
             if future.cancelled():
                 if self.verbose:
-                    print(f"Task cancelled (ID: {original_id})")
+                    print(f"[{handler_name}] Task cancelled (ID: {task_id})")
             elif future.exception():
                 exc = future.exception()
-                print(f"!!! Task failed (ID: {original_id}) with exception: {exc}")
+                print(f"!!! [{handler_name}] Task failed (ID: {task_id}) with exception: {exc}")
             else:
-                # Task succeeded, get the result package (data, id)
-                worker_result_package = future.result()
-                # Only put the output if there *is* an output queue
-                if output_queue is not None:
+                # Task succeeded, get the result
+                worker_result = future.result()
+                # Only put the output if there *is* an output queue and the result isn't None
+                if output_queue is not None and worker_result is not None:
                     # Defining the result to be put in the output
-                    result_for_output = worker_result_package
+                    result_for_output = worker_result
                     self.processed_items += 1
 
             if output_queue is not None and result_for_output is not None:
                 try:
                     output_queue.put(result_for_output)
                 except Exception as q_put_error:
-                    print(f"Error putting result to output queue (ID: {original_id}), {q_put_error}")
+                    print(f"[{handler_name}] Error putting result to output queue (ID: {task_id}), {q_put_error}")
         except Exception as callback_err:
-            print(f"Error within callback logic (ID: {original_id}), {callback_err}")
+            print(f"[{handler_name}] Error within callback logic (ID: {task_id}), {callback_err}")
             traceback.print_exc()
 
         finally:
@@ -282,27 +267,23 @@ class ConcurrentPipeline:
             try:
                 input_queue_ref.task_done()
             except ValueError:
-                print(f"WARNING: task_done() called inappropriately (ID: {original_id}).")
+                print(f"[{handler_name}] WARNING: task_done() called inappropriately (ID: {task_id}).")
             except Exception as td_error:
-                print(f"Error calling task_done in callback (ID: {original_id}) {td_error}")
+                print(f"[{handler_name}] Error calling task_done in callback (ID: {task_id}) {td_error}")
 
-    def feed_data(self, data: Any, item_id: Optional[str] = None) -> None:
+    def feed_data(self, data: Any) -> None:
         """
         Feed a single data item into the pipeline.
 
         Args:
             data: The data to process
-            item_id: Optional identifier for the data item. If not provided, a UUID will be generated.
         """
         if not self.is_running:
             raise RuntimeError("Pipeline is not running. Call start() first.")
 
-        if item_id is None:
-            item_id = str(uuid.uuid4())
-
-        self.queues[0].put((data, item_id))
+        self.queues[0].put(data)
         if self.verbose:
-            print(f"[Pipeline] Item (ID: {item_id}) put into first stage.")
+            print(f"[Pipeline] Item put into first stage.")
 
     def start(self) -> None:
         """
@@ -327,18 +308,18 @@ class ConcurrentPipeline:
         if self.verbose:
             print("Pipeline started.")
 
-    def add_batch(self, data_items: List[Tuple[Any, str]]) -> None:
+    def add_batch(self, data_items: List[Any]) -> None:
         """
         Add a batch of data to the pipeline for processing.
 
         Args:
-            data_items: List of (data, id) tuples to process
+            data_items: List of data items to process
         """
         if not self.is_running:
             raise RuntimeError("Pipeline is not running. Call start() first.")
 
-        for data, item_id in data_items:
-            self.feed_data(data, item_id)
+        for data in data_items:
+            self.feed_data(data)
 
     def end(self) -> None:
         """
@@ -408,17 +389,11 @@ class ConcurrentPipeline:
         if wait:
             self.wait_completion(timeout)
 
-        # Then shut down pools to prevent new tasks
-        if self.show_progress:
-            pool_iter = tqdm(enumerate(self.pools), total=len(self.pools), desc="Shutting down worker pools")
-        else:
-            pool_iter = enumerate(self.pools)
-
-        for i, p in pool_iter:
-            try:
-                p.shutdown(wait=False)  # Non-blocking
-            except Exception as e:
-                print(f"Error shutting down pool {i + 1}: {e}")
+        # Then shut down the pool to prevent new tasks
+        try:
+            self.pool.shutdown(wait=False)  # Non-blocking
+        except Exception as e:
+            print(f"Error shutting down worker pool: {e}")
 
         # Wait for dispatchers to finish
         if self.show_progress:
@@ -441,11 +416,12 @@ class ConcurrentPipeline:
         print(f"\n--- Pipeline Shutdown Complete ---")
         print(f"Processed {self.processed_items} items in {elapsed:.2f} seconds")
 
+
 if __name__ == "__main__":
     # Configuration
     MIN_VALUE = 1
     MAX_VALUE = 1_000_000
-    LIST_SIZE = 300_000
+    LIST_SIZE = 1_000_000
     NUM_RUNS = 5
     NUM_LISTS = 10
     
@@ -477,13 +453,10 @@ if __name__ == "__main__":
         print(f"Run {j + 1}/{NUM_RUNS}")
         data_items = []
         for i in range(NUM_LISTS):
-            list_id = f'List-{i+1}'
             data = generate_random_numbers(MIN_VALUE, MAX_VALUE, LIST_SIZE)
-            data_items.append((data, list_id))
-            # pipeline.run_batch(data_items)
+            data_items.append(data)
             
-            # Adds data to be processed
-        print(f"Adding {i} data batch")
+        print(f"Adding batch of {len(data_items)} data items")
         pipeline.add_batch(data_items)
         time.sleep(0.05)
     
