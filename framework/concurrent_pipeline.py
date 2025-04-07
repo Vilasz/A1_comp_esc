@@ -9,7 +9,7 @@ import uuid
 from typing import List, Any, Tuple, Optional, Callable
 
 from tqdm import tqdm
-
+import random
 
 class ConcurrentPipeline:
     """
@@ -34,7 +34,7 @@ class ConcurrentPipeline:
 
         Args:
             max_workers_per_stage: Maximum number of worker processes per stage.
-                                   Defaults to half of CPU count.
+                                Defaults to half of CPU count.
             max_buffer_size: Maximum size of the buffer queues between stages.
             show_progress: Whether to show progress bars during processing.
             verbose: Whether to print detailed logs.
@@ -65,7 +65,7 @@ class ConcurrentPipeline:
         Args:
             name: Name of the stage for logging
             worker_function: Function that processes data. Must accept a tuple (data, id)
-                           and return a tuple (processed_data, id)
+                        and return a tuple (processed_data, id)
             max_workers: Optional override for number of workers for this specific stage
         """
         stage = {
@@ -481,7 +481,7 @@ if __name__ == "__main__":
     
     # Ends the pipeline
     pipeline.end()
-    
+
     print(f"Elapsed time: {elapsed_time}")
     
     print("Demo completed!")
