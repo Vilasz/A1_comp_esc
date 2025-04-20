@@ -1,5 +1,6 @@
 import csv
 import json
+import sqlite3
 from multiprocessing import Pool, cpu_count
 from dataframe import DataFrame
 
@@ -23,6 +24,17 @@ def parse_json_chunk(args):
         quantidade = int(pedido["quantidade"])
         centro = pedido["centro_logistico_mais_proximo"]
         rows.append([produto, quantidade, centro])
+    return rows
+
+def parse_sqlite_chunk(args):
+    database, table, offset, limit = args
+    conn = sqlite3.connect(database)
+    cursor = conn.cursor()
+
+    cursor.execute(f"SELECT * FROM {table} LIMIT {limit} OFFSET {offset}")
+    rows = cursor.fetchall()
+
+    conn.close()
     return rows
 
 
@@ -90,10 +102,38 @@ class JSONHandler:
 
         return merge_dataframes(list_of_rows, columns)
 
+class SQLiteHandler:
+    def __init__(self, num_processes=None):
+        self.num_processes = num_processes or cpu_count()
+
+    def extract_data(self, database, table):
+        conn = sqlite3.connect(database)
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT COUNT(*) FROM {table}")
+        total = cursor.fetchone()[0]
+
+        cursor.execute(f"PRAGMA table_info({table})")
+        columns_info = cursor.fetchall()
+        columns = [col[1] for col in columns_info]
+
+        chunk_size = (total + self.num_processes - 1) // self.num_processes
+        chunks = []
+        for i in range(self.num_processes):
+            offset = i * chunk_size
+            limit = min(chunk_size, total - offset)
+            if limit > 0:
+                chunks.append((database, table, offset, limit))
+
+        with Pool(processes=self.num_processes) as pool:
+            list_of_rows = pool.map(parse_sqlite_chunk, chunks)
+
+        return merge_dataframes(list_of_rows, columns)
+
+
 
 if __name__ == "__main__":
     csv_handler = CSVHandler(num_processes=4)
-    df_csv = csv_handler.extract_data("mock_data_db.csv")
+    df_csv = csv_handler.extract_data("../mock_data_db.csv")
     print("DataFrame extraído do CSV:")
     print(df_csv)
     print("Shape:", df_csv.shape())
@@ -101,7 +141,13 @@ if __name__ == "__main__":
     print("==========")
 
     json_handler = JSONHandler(num_processes=4)
-    df_json = json_handler.extract_data("mock_data_pedidos_novos.json")
+    df_json = json_handler.extract_data("../mock_data_pedidos_novos.json")
     print("DataFrame extraído do JSON:")
     print(df_json)
     print("Shape:", df_json.shape())
+
+    sqlite3_handler = SQLiteHandler(num_processes=4)
+    df_sql = sqlite3_handler.extract_data("ecommerce.db", "pedidos")
+    print("Dataframe extraído do SQLite:")
+    print(df_sql)
+    print("Shape:", df_sql.shape())
