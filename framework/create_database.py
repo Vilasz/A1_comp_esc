@@ -39,7 +39,7 @@ def create_database():
         cpf TEXT UNIQUE,
         telefone TEXT,
         data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        endereco_json TEXT,  # Armazena endereço como JSON para flexibilidade
+        endereco_json TEXT,
         ativo BOOLEAN DEFAULT TRUE
     )
     ''')
@@ -49,7 +49,7 @@ def create_database():
     CREATE TABLE IF NOT EXISTS centros_logisticos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome TEXT NOT NULL,
-        endereco_json TEXT NOT NULL,  # Armazena endereço completo
+        endereco_json TEXT NOT NULL,
         capacidade INTEGER NOT NULL CHECK(capacidade > 0),
         capacidade_utilizada INTEGER DEFAULT 0 CHECK(capacidade_utilizada >= 0),
         ativo BOOLEAN DEFAULT TRUE,
@@ -82,7 +82,7 @@ def create_database():
         preco_unitario REAL NOT NULL CHECK(preco_unitario >= 0),
         FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE CASCADE,
         FOREIGN KEY (produto_id) REFERENCES produtos(id),
-        UNIQUE (pedido_id, produto_id)  # Evita duplicação de produtos no mesmo pedido
+        UNIQUE (pedido_id, produto_id)
     )
     ''')
     
@@ -90,7 +90,7 @@ def create_database():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS entregas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pedido_id INTEGER NOT NULL UNIQUE,  # 1 pedido = 1 entrega
+        pedido_id INTEGER NOT NULL UNIQUE,
         data_envio TIMESTAMP,
         data_prevista TIMESTAMP NOT NULL,
         data_entrega TIMESTAMP,
@@ -106,7 +106,7 @@ def create_database():
     CREATE TABLE IF NOT EXISTS metricas_cache (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome_metrica TEXT NOT NULL UNIQUE,
-        valor_json TEXT NOT NULL,  # Armazena diferentes estruturas de dados
+        valor_json TEXT NOT NULL,
         data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')

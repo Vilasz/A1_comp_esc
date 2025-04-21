@@ -20,10 +20,11 @@ def parse_json_chunk(args):
     pedidos_chunk, columns = args
     rows = []
     for pedido in pedidos_chunk:
+        cliente_id = int(pedido["cliente_id"])
         produto = pedido["produto"]
         quantidade = int(pedido["quantidade"])
         centro = pedido["centro_logistico_mais_proximo"]
-        rows.append([produto, quantidade, centro])
+        rows.append([cliente_id, produto, quantidade, centro])
     return rows
 
 def parse_sqlite_chunk(args):
@@ -32,7 +33,7 @@ def parse_sqlite_chunk(args):
     cursor = conn.cursor()
 
     cursor.execute(f"SELECT * FROM {table} LIMIT {limit} OFFSET {offset}")
-    rows = cursor.fetchall()
+    rows = [list(row) for row in cursor.fetchall()]
 
     conn.close()
     return rows
@@ -87,7 +88,7 @@ class JSONHandler:
             data = json.load(f)
 
         pedidos = data["pedidos"]
-        columns = ["produto", "quantidade", "centro_logistico_mais_proximo"]
+        columns = ["cliente_id", "produto", "quantidade", "centro_logistico_mais_proximo"]
 
         chunk_size = (len(pedidos) + self.num_processes - 1) // self.num_processes
         chunks = []
@@ -99,7 +100,6 @@ class JSONHandler:
 
         with Pool(processes=self.num_processes) as pool:
             list_of_rows = pool.map(parse_json_chunk, chunks)
-
         return merge_dataframes(list_of_rows, columns)
 
 class SQLiteHandler:
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     print("==========")
 
     json_handler = JSONHandler(num_processes=4)
-    df_json = json_handler.extract_data("../mock_data_pedidos_novos.json")
+    df_json = json_handler.extract_data("../mock/mock_data_pedidos_novos.json")
     print("DataFrame extraído do JSON:")
     print(df_json)
     print("Shape:", df_json.shape())
@@ -149,5 +149,5 @@ if __name__ == "__main__":
     sqlite3_handler = SQLiteHandler(num_processes=4)
     df_sql = sqlite3_handler.extract_data("ecommerce.db", "pedidos")
     print("Dataframe extraído do SQLite:")
-    print(df_sql)
+    #print(df_sql)
     print("Shape:", df_sql.shape())

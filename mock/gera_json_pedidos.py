@@ -32,9 +32,10 @@ def gerar_pedidos(qtd_pedidos):
         centro = random.choice(centros_logisticos)
 
         pedido = {
-            "produto": produto,
+            "cliente_id": random.randint(1, 3000),
+            "produto": random.randint(1, 29),
             "quantidade": quantidade,
-            "centro_logistico_mais_proximo": centro
+            "centro_logistico_mais_proximo": random.randint(1, 10)
         }
 
         pedidos.append(pedido)
