@@ -5,7 +5,7 @@ from faker import Faker
 from datetime import timedelta
 
 fk = Faker("pt_BR")
-conn = sqlite3.connect("../framework/ecommerce.db")
+conn = sqlite3.connect("../ecommerce.db")
 cursor = conn.cursor()
 
 def populate_clientes(num_clientes):
