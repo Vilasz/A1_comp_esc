@@ -1,5 +1,22 @@
 # Repositório para o trabalho de A1 da disciplina de Computação Escalável
-## Primeira entrega
+
+## Entrega final: pipeline ETL de Plataforma de E-commerce e Gestão de Cadeia de Suprimentos
+O projeto escolhido para mostrar aplicações do nosso micro-framework foi uma Plataforma de E-commerce e Gestão de Cadeia de Suprimentos.
+O pipeline de exemplo criado foi o seguinte:
+
+<img src='imgs/final_pipe.jpg' />
+
+### Código e como rodar
+Primeiramente, baixo o pacote <tqdm> utilizando o instalador de pacote de sua preferência
+Exemplo (com pip):
+
+```bash
+pip install tqdm
+```
+
+Verifique mais detalhes sobre o nosso projeto no [relatório final](relatorio_final.docx)
+
+## Primeira entrega (MVP)
 A primeira entrega consiste na tentativa de implementação do seguinte MVP do pipeline: 
 
 <img src='imgs/mvp_pipe.jpg' />
@@ -28,3 +45,4 @@ Obs: dependendo da quantidade de dados submetida ao pipeline, há um bug em que 
   - a linha 71 gera o mock de pedidos novos no formato de um json
   - as linhas 76 e 79 rodam os extratores desses mocks criados
   - a partir da linha 82 são feitos os testes com o pipeline com os números de workers definidos na lista <num_workers>
+  
