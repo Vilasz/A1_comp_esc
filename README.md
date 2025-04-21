@@ -14,7 +14,7 @@ Exemplo (com pip):
 pip install tqdm
 ```
 
-Verifique mais detalhes sobre o nosso projeto no [relatório final](relatorio_final.docx)
+Verifique mais detalhes sobre o nosso projeto no [relatório final.](relatorio_final.pdf)
 
 ## Primeira entrega (MVP)
 A primeira entrega consiste na tentativa de implementação do seguinte MVP do pipeline: 
