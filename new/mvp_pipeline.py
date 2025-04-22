@@ -18,9 +18,6 @@ from __future__ import annotations
 from concurrent.futures import as_completed
 
 import argparse
-import csv
-import hashlib
-import json
 import os
 import random
 import sqlite3
@@ -31,170 +28,12 @@ from typing import Dict, List, Sequence, Tuple
 from tqdm import tqdm
 
 from data_generators import CENTERS, CHANNELS, PRODUCTS, generate_csv, generate_json
-from miniframework import HybridPool, METRICS, CPU_LIMIT
+from loaders import DEFAULT_JSON, DEFAULT_CSV, load_csv, load_json
+from database import DEFAULT_DB, ensure_table, upsert
+from hybrid_pool import HybridPool, CPU_LIMIT
+from metrics import METRICS
+from worker import process_chunk, merge_int, merge_num, merge_pair
 
-###############################################################################
-# CONSTANTES / CONFIG #########################################################
-###############################################################################
-DEFAULT_CSV = Path("mock_data_db.csv")
-DEFAULT_JSON = Path("mock_data_pedidos_novos.json")
-DEFAULT_DB = Path("ecommerce.db")
-SUMMARY_TABLE = "orders_summary"
-
-###############################################################################
-# EXTRAÇÃO ####################################################################
-###############################################################################
-
-
-def _load_csv(path: Path) -> List[Tuple[str, int, str, float, str, str]]:
-    with path.open("r", encoding="utf-8") as f:
-        rdr = csv.DictReader(f)
-        return [
-            (
-                row["produto"],
-                int(row["quantidade"]),
-                row["centro_logistico_mais_proximo"],
-                float(row["preco_unitario"]),
-                row["canal_venda"],
-                row["estado_cliente"],
-            )
-            for row in rdr
-        ]
-
-
-def _load_json(path: Path) -> List[Tuple[str, int, str, float, str, str]]:
-    with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)["pedidos"]
-    return [
-        (
-            p["produto"],
-            int(p["quantidade"]),
-            p["centro_logistico_mais_proximo"],
-            float(p["preco_unitario"]),
-            p["canal_venda"],
-            p["estado_cliente"],
-        )
-        for p in data
-    ]
-
-###############################################################################
-# WORKER ######################################################################
-###############################################################################
-
-
-def _process_chunk(
-    chunk: Sequence[Tuple[str, int, str, float, str, str]],
-    loops: int,
-) -> Tuple[
-    Dict[Tuple[str, str], Tuple[float, int]],
-    Dict[str, float],
-    Dict[str, int],
-]:
-    rng = random.Random()
-    sha = hashlib.sha256
-
-    prod_center: Dict[Tuple[str, str], Tuple[float, int]] = {}
-    canal_tot: Dict[str, float] = {}
-    estado_qtd: Dict[str, int] = {}
-
-    for prod, qtd, centro, preco, canal, uf in chunk:
-        preco = preco * rng.uniform(0.95, 1.05)  # ligeira variação
-        # 1) produto+centro
-        v, c = prod_center.get((prod, centro), (0.0, 0))
-        prod_center[(prod, centro)] = (v + preco * qtd, c + qtd)
-        # 2) canal
-        canal_tot[canal] = canal_tot.get(canal, 0.0) + preco * qtd
-        # 3) estado
-        estado_qtd[uf] = estado_qtd.get(uf, 0) + qtd
-
-        # payload CPU‑bound
-        payload = f"{prod}{qtd}{centro}{preco}".encode()
-        for _ in range(loops):
-            payload = sha(payload).digest()
-
-    METRICS.counter("records_processed").inc(len(chunk))
-    return prod_center, canal_tot, estado_qtd
-
-###############################################################################
-# MERGE TOOLS #################################################################
-###############################################################################
-
-
-def _merge_pair(
-    dest: Dict[Tuple[str, str], Tuple[float, int]],
-    src: Dict[Tuple[str, str], Tuple[float, int]],
-):
-    for k, (v, q) in src.items():
-        dv, dq = dest.get(k, (0.0, 0))
-        dest[k] = (dv + v, dq + q)
-
-
-def _merge_num(dest: Dict[str, float], src: Dict[str, float]):
-    for k, v in src.items():
-        dest[k] = dest.get(k, 0.0) + v
-
-
-def _merge_int(dest: Dict[str, int], src: Dict[str, int]):
-    for k, v in src.items():
-        dest[k] = dest.get(k, 0) + v
-
-###############################################################################
-# SQLITE ######################################################################
-###############################################################################
-
-
-def _ensure_table(conn: sqlite3.Connection):
-    conn.executescript(
-        f"""
-        CREATE TABLE IF NOT EXISTS {SUMMARY_TABLE} (
-            produto TEXT,
-            centro  TEXT,
-            total_valor REAL,
-            total_qtd  INTEGER,
-            PRIMARY KEY (produto, centro)
-        );
-        CREATE TABLE IF NOT EXISTS canal_summary (
-            canal TEXT PRIMARY KEY,
-            total_valor REAL
-        );
-        CREATE TABLE IF NOT EXISTS estado_summary (
-            estado TEXT PRIMARY KEY,
-            total_qtd INTEGER
-        );
-        """
-    )
-    conn.commit()
-
-
-def _upsert(
-    conn: sqlite3.Connection,
-    pc: Dict[Tuple[str, str], Tuple[float, int]],
-    canal: Dict[str, float],
-    estado: Dict[str, int],
-):
-    cur = conn.cursor()
-    cur.executemany(
-        f"""INSERT INTO {SUMMARY_TABLE}
-              (produto,centro,total_valor,total_qtd)
-            VALUES (?,?,?,?)
-            ON CONFLICT(produto,centro) DO UPDATE SET
-              total_valor=total_valor+excluded.total_valor,
-              total_qtd  =total_qtd  +excluded.total_qtd""",
-        [(p, c, v, q) for (p, c), (v, q) in pc.items()],
-    )
-    cur.executemany(
-        """INSERT INTO canal_summary (canal,total_valor)
-           VALUES (?,?)
-           ON CONFLICT(canal) DO UPDATE SET total_valor=total_valor+excluded.total_valor""",
-        list(canal.items()),
-    )
-    cur.executemany(
-        """INSERT INTO estado_summary (estado,total_qtd)
-           VALUES (?,?)
-           ON CONFLICT(estado) DO UPDATE SET total_qtd=total_qtd+excluded.total_qtd""",
-        list(estado.items()),
-    )
-    conn.commit()
 
 ###############################################################################
 # MAIN PIPELINE ###############################################################
@@ -220,7 +59,7 @@ def run_pipeline(
         generate_json(json_size, json_path)
 
     # -------- carrega ----------------------------------------------------
-    records = _load_csv(csv_path) + _load_json(json_path)
+    records = load_csv(csv_path) + load_json(json_path)
     total = len(records)
 
     # -------- partição em chunks ----------------------------------------
@@ -236,21 +75,21 @@ def run_pipeline(
     glob_estado: Dict[str, int] = {}
 
     pool = HybridPool(limit=workers)
-    futs = [pool.submit(_process_chunk, ch, loops) for ch in chunks]
+    futs = [pool.submit(process_chunk, ch, loops) for ch in chunks]
 
     for fut in tqdm(as_completed(futs), total=len(futs), desc="Chunks"):
         pc, canal, estado = fut.result()
-        _merge_pair(glob_pc, pc)
-        _merge_num(glob_canal, canal)
-        _merge_int(glob_estado, estado)
+        merge_pair(glob_pc, pc)
+        merge_num(glob_canal, canal)
+        merge_int(glob_estado, estado)
 
     pool.shutdown()
     wall_dur = time.perf_counter() - wall_start
 
     # -------- grava SQLite ----------------------------------------------
     conn = sqlite3.connect(db_path)
-    _ensure_table(conn)
-    _upsert(conn, glob_pc, glob_canal, glob_estado)
+    ensure_table(conn)
+    upsert(conn, glob_pc, glob_canal, glob_estado)
     conn.close()
 
     # -------- relatório --------------------------------------------------
@@ -284,8 +123,8 @@ def _parse() -> argparse.Namespace:
     p.add_argument("--csv", type=Path, default=DEFAULT_CSV)
     p.add_argument("--json", type=Path, default=DEFAULT_JSON)
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
-    p.add_argument("--csv-size", type=int, default=1_000_000)
-    p.add_argument("--json-size", type=int, default=400_000)
+    p.add_argument("--csv-size", type=int, default=1_00)
+    p.add_argument("--json-size", type=int, default=40)
     p.add_argument("--workers", type=int, default=min(os.cpu_count() or 4, CPU_LIMIT))
     p.add_argument("--loops", type=int, default=800)
     p.add_argument("--chunksize", type=int)
