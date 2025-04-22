@@ -3,13 +3,25 @@
 ## Entrega final: pipeline ETL de Plataforma de E-commerce e Gestão de Cadeia de Suprimentos
 O projeto escolhido para mostrar aplicações do nosso micro-framework foi uma Plataforma de E-commerce e Gestão de Cadeia de Suprimentos.
 
-### Código e como rodar
-Primeiramente, baixo o pacote <tqdm> utilizando o instalador de pacote de sua preferência
-Exemplo (com pip):
+**FAVOR CONSIDERAR CÓDIGO NO INTERIOR DA PASTA NEW**
 
-```bash
-pip install tqdm
-```
+### Código e como rodar
+Utilizamos o uv como gerenciador de pacotes, isso facilita a fim de evitar conflito de dependências (não é o caso), e facilita na hora de rodar o código.
+Ao clonar execute no terminal os seguintes comandos:
+
+Windows:
+`powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+
+Linux ou Mac:
+```curl -LsSf https://astral.sh/uv/install.sh | sh```
+
+Em seguida, no terminal execute:
+
+`uv init`
+
+`uv run`
+
+Isso instalará todas as dependências necessárias, para mais informações: [https://github.com/astral-sh/uv?tab=readme-ov-file]
 
 Verifique mais detalhes sobre o nosso projeto no [relatório final.](relatorio_final.pdf)
 
@@ -42,4 +54,59 @@ Obs: dependendo da quantidade de dados submetida ao pipeline, há um bug em que 
   - a linha 71 gera o mock de pedidos novos no formato de um json
   - as linhas 76 e 79 rodam os extratores desses mocks criados
   - a partir da linha 82 são feitos os testes com o pipeline com os números de workers definidos na lista <num_workers>
+
+ ---
+
+ ## How to use
+
+ ### 1. `mvp_pipeline.py`
+
+#### Visão Geral
+
+- Roda um pipeline ETL sobre dois datasets sintéticos (CSV + JSON).  
+- Processa em paralelo usando um pool híbrido (`HybridPool`) de processos e threads, respeitando um limite de CPUs.  
+- Gera três agregações simultâneas no worker:
+  1. `(produto, centro) → (valor_total, quantidade)`  
+  2. `canal_venda → valor_total`  
+  3. `estado_cliente → quantidade`  
+- Persiste resultados em SQLite e imprime um relatório com:
+  - **Throughput** (registros/s)
+  - **TOP 5** canais por receita
+  - **TOP 5** estados por quantidade
+  - Métricas internas (counters)
+ 
+Run no diretório raiz:
+`python -m new.source.framework.mvp_pipeline --csv-size 500000 --json-size 200000 --workers 4 --loops 300 --chunksize 50000 --regenerate`
+
+csv_size / json_size
+Define o volume de dados sintéticos a gerar (grau de I/O + CPU no parse).
+
+workers
+Quanto maior, mais paralelismo — até CPU_LIMIT processos; além disso, threads.
+
+loops
+Simula carga de CPU adicional: cada registro sofre N iterações de SHA‑256.
+
+chunksize
+Impacta granularidade do paralelismo: chunks pequenos → mais tarefas, overhead maior; chunks grandes → potencial desequilíbrio.
+
+regenerate
+Se True, força recriação dos arquivos CSV/JSON mesmo que já existam.
+
+### 2. `benchmark_utils.py`
+Run:
+`python -m new.source.utils.benchmark_utils.py "1,2,4,8,12"`
+
+### 3. `dashboard.py`
+Run:
+`python -m streamlit run dashboard.py`
+---
+## Resultados
+
+<<img src='imgs/output1.png' />
+
+<img src='imgs/output2.png' />
+
+<img src='imgs/cpu_chart.png' />
+
   
