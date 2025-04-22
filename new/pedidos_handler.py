@@ -1,16 +1,14 @@
-# etl_handlers.py
 import csv
 import json
 import sqlite3
 from multiprocessing import Pool, cpu_count
 
-# ⇩ usa as estruturas do novo mini‑framework
 from miniframework import DataFrame, Series
 
 
-# ──────────────────────────────────────────────────────────────────────────
+
 # Funções de parsing executadas em subprocessos
-# ──────────────────────────────────────────────────────────────────────────
+
 def _parse_csv_chunk(args):
     lines_chunk, _columns = args
     rows = []
@@ -41,9 +39,9 @@ def _parse_sqlite_chunk(args):
         return cur.fetchall()
 
 
-# ──────────────────────────────────────────────────────────────────────────
+
 # Helper: converte lista de linhas → DataFrame do mini‑framework
-# ──────────────────────────────────────────────────────────────────────────
+
 def _rows_to_dataframe(list_of_rows, columns):
     """
     `list_of_rows` é uma lista de *sub‑listas* — cada sub‑lista vem de um
@@ -58,15 +56,14 @@ def _rows_to_dataframe(list_of_rows, columns):
         series = [Series() for _ in columns]
         return DataFrame(columns, series)
 
-    # transpondo: linhas → colunas
     cols_data = list(zip(*all_rows))
     series    = [Series(list(col)) for col in cols_data]
     return DataFrame(columns, series)
 
 
-# ──────────────────────────────────────────────────────────────────────────
+
 # Handlers
-# ──────────────────────────────────────────────────────────────────────────
+
 class CSVHandler:
     def __init__(self, num_processes: int | None = None):
         self.num_processes = num_processes or cpu_count()
@@ -133,9 +130,9 @@ class SQLiteHandler:
         return _rows_to_dataframe(parsed_chunks, columns)
 
 
-# ──────────────────────────────────────────────────────────────────────────
+
 # Execução rápida para teste
-# ──────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     csv_handler = CSVHandler(num_processes=4)
     df_csv = csv_handler.extract_data("../mock_data_db.csv")

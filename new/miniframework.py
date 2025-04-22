@@ -1,44 +1,9 @@
 # miniframework.py
-"""Mini‑framework que reimplementa, em Python, as estruturas utilitárias usadas nos
-módulos C++ originais do seu projeto (DataFrame, Series, DateTime, filas
-thread‑safe, mutexes, triggers etc.).
-
-A meta desta versão é **ser fiel ao comportamento** do código C++ ao mesmo
-tempo em que adota idiomas Python modernos, incluindo *type hints*,
-`dataclasses`, *context managers* e **tratamento explícito do GIL**.
-
-Esta biblioteca foi separada do pipeline principal para que possamos evoluir
-cada parte de forma modular.  São mais de 700 linhas de código bem comentado –
-leitura recomendada para entender como cada componente funciona.
-
-Highlights
-==========
-* **GIL friendly** – todas as seções potencialmente bloqueantes expõem uma
-  *flag* `use_mp` (multiprocessing) quando a carga de CPU for substancial.
-  O default continua usando *threads* porque boa parte do ETL é I/O‑bound, mas
-  há exemplos de como saltar o GIL.
-* **DataFrame & Series** – estruturas *lightweight* com API inspirada em
-  *pandas* (e idêntica à versão C++).  Operações aritméticas usam *NumPy*
-  quando disponível para velocidade; caso contrário, seguem puramente em
-  *Python*.
-* **DateTime & TimeDelta** – *wrappers* finos sobre `datetime.datetime` e
-  `datetime.timedelta`, porém mantendo os métodos extras definidos em C++.
-* **Thread‑safe Queue** com *condition variables* e capacidade máxima.
-* **MapMutex** – locks por‑chave tal como o template C++, fornecendo método
-  `get_lock()` que devolve um *context manager* (uso com `with`).
+"""Mini‑framework que reimplementa as estruturas usadas no seu projeto
+(DataFrame, Series, DateTime, filas thread‑safe, mutexes, triggers etc.).
 
 Dependências mínimas: `numpy` (opcional mas recomendado), `sqlite3` (builtin)
 
-Uso rápido
-----------
->>> from miniframework import Series, DataFrame, DateTime, Trigger, Queue
->>> df = DataFrame()
->>> df.add_column("id", Series([1, 2, 3]))
->>> df.append({"id": 4})
->>> df.print()
-
-Veja o final do arquivo para *self‑tests* (executados quando `python -m
-miniframework`).
 """
 from __future__ import annotations
 
@@ -64,27 +29,25 @@ from concurrent.futures import as_completed
 try:
     import numpy as np
 except ImportError:  # pragma: no cover – numpy é opcional
-    np = None  # type: ignore
+    np = None  
 
-# ⇨ ADICIONAR logo após a lista de imports
 CPU_LIMIT = min(os.cpu_count() or 4, 12)
 random.seed(42)  # reprodutibilidade dos exemplos / métricas
 
 
-# ---------------------------------------------------------------------------
+
 # Configuração de logging
-# ---------------------------------------------------------------------------
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)10s] %(levelname)8s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
+
 # Helpers & Tipos genéricos
-# ---------------------------------------------------------------------------
+
 T = TypeVar("T")
 K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
 
-# Union análogo ao DefaultObject do C++ ------------------------------------
 DefaultObject = Union[int, bool, float, str, "DateTime", "TimeDelta"]
 
 # Decorador para fallback quando numpy não estiver presente -----------------
@@ -93,7 +56,7 @@ def _use_numpy(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
     """Se *numpy* existir, executa versão vetorizada; caso contrário, avisa."""
 
     @wraps(func)
-    def wrapper(self: "Series", *args: Any, **kwargs: Any):  # type: ignore[name‑defined]
+    def wrapper(self: "Series", *args: Any, **kwargs: Any):  
         if np is None:
             warnings.warn("Numpy não encontrado; operações vetorizadas podem ficar lentas.")
             return func(self, *args, **kwargs)
@@ -101,12 +64,11 @@ def _use_numpy(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
 
     return wrapper
 
-# ---------------------------------------------------------------------------
+
 # TimeDelta & DateTime – wrappers sobre datetime / timedelta
-# ---------------------------------------------------------------------------
+
 @dataclasses.dataclass
 class TimeDelta:
-    """Compatível com a struct C++ homônima."""
 
     _delta: _td
 
@@ -158,7 +120,6 @@ class TimeDelta:
 
 @dataclasses.dataclass
 class DateTime:
-    """Wrapper fino para manter API do C++."""
 
     _dt: _dt = dataclasses.field(default_factory=lambda: _dt.fromtimestamp(time.time()))
 
@@ -187,7 +148,6 @@ class DateTime:
     def from_string(cls, s: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> "DateTime":
         return cls(_dt.strptime(s, fmt))
 
-    # Métodos C++‑like ------------------------------------------------------
     def year(self) -> int:
         return self._dt.year
 
@@ -252,10 +212,10 @@ class DateTime:
     def __ge__(self, other: "DateTime") -> bool:
         return self._dt >= other._dt
 
-    def __eq__(self, other: object) -> bool:  # type: ignore[override]
+    def __eq__(self, other: object) -> bool:  
         return isinstance(other, DateTime) and self._dt == other._dt
 
-    def __ne__(self, other: object) -> bool:  # type: ignore[override]
+    def __ne__(self, other: object) -> bool:  
         return not self.__eq__(other)
 
     def __str__(self) -> str:
@@ -264,14 +224,13 @@ class DateTime:
     def __repr__(self) -> str:  # pragma: no cover
         return f"<DateTime {self}>"
 
-# ---------------------------------------------------------------------------
+
 # Series – estrutura unidimensional (lista tipada por DefaultObject)
-# ---------------------------------------------------------------------------
+
 class Series(Generic[T]):
     """Série de valores heterogêneos (ou não).
 
-    Na maior parte dos casos é preferível usar *numpy* arrays, mas aqui
-    mantemos compat. com o design C++.
+    Na maior parte dos casos é preferível usar *numpy* arrays
     """
 
     __slots__ = ("_data",)
@@ -341,11 +300,11 @@ class Series(Generic[T]):
         return Series([ops[op](v, value) for v in self])
 
     # Conversões -----------------------------------------------------------
-    def astype(self, cast: Callable[[T], V]) -> "Series[V]":  # type: ignore[type‑var]
+    def astype(self, cast: Callable[[T], V]) -> "Series[V]":  
         return Series([cast(v) for v in self])
 
     def to_datetime(self) -> "Series[DateTime]":
-        return Series(DateTime.from_string(str(v)) if not isinstance(v, DateTime) else v for v in self)  # type: ignore[arg‑type]
+        return Series(DateTime.from_string(str(v)) if not isinstance(v, DateTime) else v for v in self)  
 
     # Utilidades -----------------------------------------------------------
     def copy(self) -> "Series[T]":
@@ -364,14 +323,12 @@ class Series(Generic[T]):
         for v in self:
             print(f"{v!s:>{padding}}")
 
-# ---------------------------------------------------------------------------
+
 # DataFrame – matriz 2D de Series
-# ---------------------------------------------------------------------------
+
 class DataFrame(Generic[T]):
     """Estrutura tabular minimalista.
 
-    Nota: nem remotamente tão rica quanto *pandas*.  Suficiente para replicar a
-    API usada no código C++.
     """
 
     def __init__(
@@ -415,7 +372,7 @@ class DataFrame(Generic[T]):
             return
 
         for col in self.columns:
-            self[col].append(row[col])  # type: ignore[index]
+            self[col].append(row[col])  
         self._update_shape()
 
     # Indexing -------------------------------------------------------------
@@ -430,7 +387,7 @@ class DataFrame(Generic[T]):
             for k in key:
                 if k not in self.columns:
                     raise KeyError(k)
-                df.add_column(k, self[k].copy())  # type: ignore[arg‑type]
+                df.add_column(k, self[k].copy())  
             return df
 
     # Manipulação ----------------------------------------------------------
@@ -447,7 +404,7 @@ class DataFrame(Generic[T]):
             raise ValueError("Columns must match (same order)")
         df = DataFrame(self.columns.copy(), [s.copy() for s in self.series])
         for col in self.columns:
-            df[col].extend(other[col])  # type: ignore[index]
+            df[col].extend(other[col])  
         df._update_shape()
         return df
 
@@ -478,23 +435,23 @@ class DataFrame(Generic[T]):
     ) -> "DataFrame[T]":
         if left_on not in self.columns or right_on not in other.columns:
             raise KeyError("merge keys not found")
-        left_map: Dict[Any, int] = {self[left_on][i]: i for i in range(self.shape[0])}  # type: ignore[arg‑type]
+        left_map: Dict[Any, int] = {self[left_on][i]: i for i in range(self.shape[0])}  
         df = self.copy()
         for col in other.columns:
             if col == right_on:
                 continue
             new_series = Series[T]()
-            for key in self[left_on]:  # type: ignore[arg‑type]
+            for key in self[left_on]:  
                 row_idx = left_map[key]
                 match_idx = None
                 # encontra a primeira ocorrência no outro DF – pode ser otimizado
                 for j in range(other.shape[0]):
-                    if other[right_on][j] == key:  # type: ignore[index]
+                    if other[right_on][j] == key:  
                         match_idx = j
                         break
                 if match_idx is None:  # noqa: SIM108
                     raise KeyError(f"Key {key} not found in right DataFrame")
-                new_series.append(other[col][match_idx])  # type: ignore[index]
+                new_series.append(other[col][match_idx])  
             df.add_column(col, new_series)
         return df
 
@@ -510,21 +467,21 @@ class DataFrame(Generic[T]):
             if c not in self.columns:
                 raise KeyError(c)
         groups: Dict[Any, List[int]] = defaultdict(list)
-        for i, v in enumerate(self[by]):  # type: ignore[arg‑type]
+        for i, v in enumerate(self[by]):  
             groups[v].append(i)
         df = DataFrame()
         for key, idxs in groups.items():
-            row: Dict[str, T] = {by: key}  # type: ignore[assignment]
+            row: Dict[str, T] = {by: key}  
             for col in agg_cols:
-                values = [self[col][i] for i in idxs]  # type: ignore[index]
+                values = [self[col][i] for i in idxs]  
                 if agg_fn == "mean":
-                    row[col] = sum(values) / len(values)  # type: ignore[assignment]
+                    row[col] = sum(values) / len(values)  
                 elif agg_fn == "sum":
-                    row[col] = sum(values)  # type: ignore[assignment]
+                    row[col] = sum(values)  
                 elif agg_fn == "max":
-                    row[col] = max(values)  # type: ignore[assignment]
+                    row[col] = max(values)  
                 elif agg_fn == "min":
-                    row[col] = min(values)  # type: ignore[assignment]
+                    row[col] = min(values)  
                 else:
                     raise ValueError("Invalid aggregation function")
             df.append(row)
@@ -534,7 +491,7 @@ class DataFrame(Generic[T]):
         if column not in self.columns:
             raise KeyError(column)
         counts: Dict[Any, int] = defaultdict(int)
-        for v in self[column]:  # type: ignore[arg‑type]
+        for v in self[column]:  
             counts[v] += 1
         df = DataFrame()
         for k, v in counts.items():
@@ -547,13 +504,13 @@ class DataFrame(Generic[T]):
                 raise KeyError(col)
         seen: Dict[Tuple[Any, ...], int] = {}
         for i in range(self.shape[0]):
-            key = tuple(self[col][i] for col in subset)  # type: ignore[index]
-            seen[key] = i  # keeps last occurrence, mimic C++
+            key = tuple(self[col][i] for col in subset)  
+            seen[key] = i 
         df = DataFrame()
         for col in self.columns:
             df.add_column(col, Series())
         for idx in seen.values():
-            row = {col: self[col][idx] for col in self.columns}  # type: ignore[index]
+            row = {col: self[col][idx] for col in self.columns}  
             df.append(row)
         return df
 
@@ -571,9 +528,9 @@ class DataFrame(Generic[T]):
     def __repr__(self) -> str:  # noqa: D401
         return f"<DataFrame rows={self.shape[0]} cols={self.shape[1]}>"
 
-# ---------------------------------------------------------------------------
+
 # SQLite DB Helper – equivalente ao db.h
-# ---------------------------------------------------------------------------
+
 class DB:
     """Wrapper minimalista em torno de `sqlite3.Connection`.  Usa transações."""
 
@@ -609,9 +566,9 @@ class DB:
         self.close()
 
 # ⇨ ADICIONAR antes da seção Queue / MapMutex
-# ---------------------------------------------------------------------------
+
 # MÉTRICAS (contadores + histogramas) – thread‑safe
-# ---------------------------------------------------------------------------
+
 class _Counter:
     def __init__(self) -> None:
         self.v = 0
@@ -671,9 +628,9 @@ class Metrics:
 METRICS = Metrics()
 
 
-# ---------------------------------------------------------------------------
+
 # Queue – fila thread‑safe com capacidade (Condition + deque opcional)
-# ---------------------------------------------------------------------------
+
 class Queue(Generic[K, V]):
     def __init__(self, capacity: int = 1000):
         self._capacity = capacity
@@ -697,13 +654,12 @@ class Queue(Generic[K, V]):
             self._cv.notify_all()
             return item
 
-    # alias para manter compat. com C++ -----------------------------------
     enQueue = enqueue
     deQueue = dequeue
 
-# ---------------------------------------------------------------------------
+
 # MapMutex – locks por‑chave, devolvendo context manager
-# ---------------------------------------------------------------------------
+
 class MapMutex(Generic[T]):
     def __init__(self) -> None:
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
@@ -720,18 +676,17 @@ class MapMutex(Generic[T]):
         finally:
             lock.release()
 
-    # Métodos C++‑like -----------------------------------------------------
     def get(self, key: str, default: T | None = None) -> T:
         with self._global:
-            return self._data.get(key, default)  # type: ignore[return‑value]
+            return self._data.get(key, default)  
 
     def set(self, key: str, value: T) -> None:
         with self._global:
             self._data[key] = value
 
-# ---------------------------------------------------------------------------
+
 # ThreadWrapper – classe base para threads reutilizável
-# ---------------------------------------------------------------------------
+
 class ThreadWrapper(Generic[K, V], threading.Thread):
     """Abstração similar ao template C++.
 
@@ -780,9 +735,9 @@ class ThreadWrapper(Generic[K, V], threading.Thread):
     def stop(self) -> None:
         self._running.clear()
 
-# ---------------------------------------------------------------------------
+
 # Handler – roteador entre várias filas de saída
-# ---------------------------------------------------------------------------
+
 class Handler(Generic[T]):
     def __init__(
         self,
@@ -825,9 +780,9 @@ class Handler(Generic[T]):
         self._running.clear()
         self._thread.join()
 
-# ---------------------------------------------------------------------------
+
 # Trigger – base + TimeTrigger / RequestTrigger
-# ---------------------------------------------------------------------------
+
 class Trigger:
     def __init__(self, out_queue: Queue[str, str], first: str, second: str) -> None:
         self.out_queue = out_queue
@@ -871,9 +826,9 @@ class RequestTrigger(Trigger):
             self._running.clear()  # executa só uma vez
 
 # ⇨ ADICIONAR antes do bloco “Self‑test”
-# ---------------------------------------------------------------------------
+
 # TASK SYSTEM + SCHEDULER Round‑Robin
-# ---------------------------------------------------------------------------
+
 TaskFn = Callable[[], Any]
 _TASKS: dict[str, TaskFn] = {}
 _DEPS: dict[str, set[str]] = defaultdict(set)
@@ -938,9 +893,9 @@ class HybridPool:
         self._proc.shutdown(wait=True)
         self._th.shutdown(wait=True)
 
-# ---------------------------------------------------------------------------
+
 # Self‑test rápido quando executado como script
-# ---------------------------------------------------------------------------
+
 # ⇨ SUBSTITUIR o bloco “Self‑test rápido …” inteiro pelo abaixo
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)

@@ -12,8 +12,8 @@ class Trigger:
         self._running.set()
         self._thread = threading.Thread(target=self.run, daemon=True)
 
-    # API -----------------------------------------------------------------
-    def run(self) -> None:  # noqa: D401 – sobrescrito em subclasses
+    # API 
+    def run(self) -> None:  
         raise NotImplementedError
 
     def start(self) -> None:
@@ -23,7 +23,7 @@ class Trigger:
         self._running.clear()
         self._thread.join()
 
-    # Auxiliar ------------------------------------------------------------
+    # Auxiliar 
     def add_to_queue(self) -> None:
         self.out_queue.enqueue((self.first, self.second))
 
@@ -33,14 +33,14 @@ class TimeTrigger(Trigger):
         super().__init__(out_queue, first, second)
         self.interval = interval_ms / 1000.0
 
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:  
         while self._running.is_set():
             time.sleep(self.interval)
             self.add_to_queue()
 
 
 class RequestTrigger(Trigger):
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:  
         if self._running.is_set():
             self.add_to_queue()
             self._running.clear()  # executa só uma vez

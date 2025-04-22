@@ -1,4 +1,4 @@
-# dashboard.py ─────────────────────────────────────────────────────────────
+# dashboard.py 
 """
 Dashboard Streamlit para a base ecommerce.db.
 
@@ -22,9 +22,9 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-###########################################################################
-# CONFIGURAÇÕES BÁSICAS                                                   #
-###########################################################################
+
+# CONFIGURAÇÕES BÁSICAS                                             
+
 
 st.set_page_config(
     page_title="E‑commerce Dashboard",
@@ -42,9 +42,9 @@ CSS = """
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-###########################################################################
-# SELETOR DO BANCO (SIDEBAR)                                              #
-###########################################################################
+
+# SELETOR DO BANCO (SIDEBAR)                                        
+
 
 DEFAULT_DB = Path(__file__).with_name("ecommerce.db")
 
@@ -56,9 +56,9 @@ db_input = st.sidebar.text_input(
 )
 DB_PATH = Path(db_input).expanduser().resolve()
 
-###########################################################################
-# CONEXÃO / CONSULTAS (caching agressivo)                                  #
-###########################################################################
+
+# CONEXÃO / CONSULTAS (caching agressivo)                            
+
 
 
 @st.cache_resource(
@@ -101,12 +101,12 @@ itens = dfs["itens_pedido"]
 entregas = dfs["entregas"]
 centros = dfs["centros_logisticos"]
 
-###########################################################################
-# MÉTRICAS DE TOPO (KPI CARDS)                                             #
-###########################################################################
+
+# MÉTRICAS DE TOPO (KPI CARDS)                                       
 
 
-# ── ajuste do helper ────────────────────────────────────────────────────
+
+# ── ajuste do helper 
 def _metric_block(label: str, value, col):
     """Renderiza um card de KPI. Aceita str ou número."""
     if isinstance(value, (int, float)):
@@ -126,7 +126,7 @@ def _metric_block(label: str, value, col):
 
 col1, col2, col3, col4 = st.columns(4)
 
-# ── chamada para o KPI Receita  ─────────────────────────────────────────
+# chamada para o KPI Receita  
 _metric_block("receita (R$)", pedidos["valor_total"].sum(), col4)
 _metric_block("clientes", len(clientes), col1)
 _metric_block("pedidos", len(pedidos), col2)
@@ -135,11 +135,11 @@ _metric_block("receita (R$)", f'{float(pedidos["valor_total"].sum()):,.0f}', col
 
 st.markdown("---")
 
-###########################################################################
-# TRANSFORMAÇÕES AUXILIARES                                                #
-###########################################################################
 
-# -- receita por mês (usa data_envio se existir; senão rótulo "Sem data")
+# TRANSFORMAÇÕES AUXILIARES                                          
+
+
+# receita por mês (usa data_envio se existir; senão rótulo "Sem data")
 ent_map = entregas.set_index("pedido_id")["data_envio"]
 ent_map_dict = ent_map.to_dict()
 
@@ -163,7 +163,7 @@ rev_mes = (
     .sort_values("mes")
 )
 
-# -- detalhamento item × receita
+# detalhamento item × receita
 itens_join = (
     itens.merge(produtos[["id", "nome"]], left_on="produto_id", right_on="id", suffixes=("", "_prod"))
     .merge(pedidos[["id", "centro_logistico_id"]], left_on="pedido_id", right_on="id", suffixes=("", "_ped"))
@@ -188,9 +188,9 @@ rev_centro = (
 )
 
 
-###########################################################################
-# GRÁFICOS                                                                 #
-###########################################################################
+
+# GRÁFICOS                                                           
+
 
 col_a, col_b = st.columns([2, 1])
 
@@ -241,9 +241,9 @@ with col_d:
 
 st.markdown("---")
 
-###########################################################################
-# TABELA DETALHADA (com filtros)                                           #
-###########################################################################
+
+# TABELA DETALHADA (com filtros)                                     
+
 
 st.subheader("Detalhe de pedidos")
 
@@ -298,9 +298,9 @@ st.dataframe(
     use_container_width=True,
 )
 
-###########################################################################
-# RODAPÉ                                                                   #
-###########################################################################
+
+# RODAPÉ                                                             
+
 
 with st.expander("📄 SQL das consultas", expanded=False):
     st.code(
@@ -328,4 +328,4 @@ with st.expander("📄 SQL das consultas", expanded=False):
     )
 
 st.caption(f"Dados carregados de: **{DB_PATH}**")
-# ────────────────────────────────────────────────────────────────────────────
+# 

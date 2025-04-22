@@ -12,9 +12,9 @@ from pedidos_handler import JSONExtractor, PedidoService
 DB_FILE = Path("ecommerce.db")
 MOCK_JSON = Path("../mock/mock_data_pedidos_novos.json")
 
-# -----------------------------------------------------------------------
+
 # 1. INGESTÃO de pedidos + itens_pedido + atualização de estoque
-# -----------------------------------------------------------------------
+
 def process_new_orders() -> Tuple[PedidoService.Table, PedidoService.Table]:
     """
     • Lê mock_data_pedidos_novos.json
@@ -22,10 +22,10 @@ def process_new_orders() -> Tuple[PedidoService.Table, PedidoService.Table]:
     • Atualiza estoque em 'produtos'
     • devolve DataFrames‑like (PedidoService.Table) já atualizados
     """
-    # --- 1. extrai JSON -----------------------------------------------------------------
+    # extrai JSON -----------------------------------------------------------------
     orders_raw = JSONExtractor().extract(MOCK_JSON)
 
-    # --- 2. abre conexão SQLite via PedidoService ---------------------------------------
+    # abre conexão SQLite via PedidoService ---------------------------------------
     svc = PedidoService(DB_FILE)
 
     pedidos_tbl      = svc.table("pedidos")
@@ -33,11 +33,11 @@ def process_new_orders() -> Tuple[PedidoService.Table, PedidoService.Table]:
     clientes_tbl     = svc.table("clientes")
     produtos_tbl     = svc.table("produtos")
 
-    # --- 3. gera chaves únicas uma única vez --------------------------------------------
+    # gera chaves únicas uma única vez --------------------------------------------
     next_pedido_id  = pedidos_tbl.last_pk(default=0) + 1
     next_item_id    = itens_pedido_tbl.last_pk(default=0) + 1
 
-    # --- 4. insere pedidos / itens e debita estoque -------------------------------------
+    # insere pedidos / itens e debita estoque -------------------------------------
     now = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for cli_id, prod_id, qtd, centro_id in orders_raw:
         # pedido
@@ -74,9 +74,9 @@ def process_new_orders() -> Tuple[PedidoService.Table, PedidoService.Table]:
     return pedidos_tbl, itens_pedido_tbl
 
 
-# -----------------------------------------------------------------------
+
 # 2. CÁLCULOS auxiliares (inalterados, mas sobre novas tabelas)
-# -----------------------------------------------------------------------
+
 def top5_mais_vendidos(itens_pedido: PedidoService.Table) -> Dict[int, int]:
     vendas: Dict[int, int] = {}
     for row in itens_pedido.rows:
@@ -104,9 +104,8 @@ def alerta_reposicao(produtos: PedidoService.Table) -> List[str]:
     return [r["nome"] for r in produtos.rows if r["estoque"] <= 10]
 
 
-# -----------------------------------------------------------------------
-# 3. CLI rápido para testar
-# -----------------------------------------------------------------------
+
+
 if __name__ == "__main__":
     pedidos, itens = process_new_orders()
 

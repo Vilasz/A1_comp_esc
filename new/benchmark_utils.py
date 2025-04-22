@@ -2,10 +2,6 @@
 """
 Ferramentas de benchmark para o ETL (mvp_pipeline).
 
-• benchmark_scaling(...)  – executa o pipeline em N valores de workers
-                             e plota curva Workers × Tempo
-• save_last_plot(fig, ...) – helper para salvar PNG/SVG/HTML
-
 Requisitos extra: pandas, plotly, tqdm
 (opcional: kaleido para exportar PNG/SVG)
 """
@@ -22,13 +18,12 @@ import pandas as pd
 import plotly.express as px
 from tqdm import tqdm
 
-# ✔ reaproveita diretamente o pipeline existente
 from mvp_pipeline import run_pipeline
 
 
-# ---------------------------------------------------------------------- #
-# Função de benchmark                                                    #
-# ---------------------------------------------------------------------- #
+
+# Função de benchmark                                     
+
 def benchmark_scaling(
     *,
     workers_seq: Sequence[int] | str,
@@ -69,9 +64,9 @@ def benchmark_scaling(
     fig : plotly.graph_objs.Figure
     df  : pandas.DataFrame  (colunas: workers, wall_time)
     """
-    # ------------------------------------------------------------------ #
-    # Sanitiza lista de workers                                          #
-    # ------------------------------------------------------------------ #
+    
+    # Sanitiza lista de workers                           
+    
     if isinstance(workers_seq, str):
         workers_seq = [int(x) for x in workers_seq.split(",") if x.strip()]
     if not workers_seq:
@@ -84,9 +79,9 @@ def benchmark_scaling(
     json_path = Path(json_path)
     db_path = Path(db_path)
 
-    # ------------------------------------------------------------------ #
-    # Garante uma única geração de dados, a menos que regenerate=True    #
-    # ------------------------------------------------------------------ #
+    
+    # Garante uma única geração de dados, a menos que regenerate=True  
+    
     if regenerate or not csv_path.exists():
         from data_generators import generate_csv
 
@@ -96,9 +91,9 @@ def benchmark_scaling(
 
         generate_json(json_size, json_path)
 
-    # ------------------------------------------------------------------ #
-    # Executa o pipeline para cada quantidade de workers                 #
-    # ------------------------------------------------------------------ #
+    
+    # Executa o pipeline para cada quantidade de workers  
+    
     results: dict[int, float] = {}
 
     for w in tqdm(workers_seq, desc="Benchmark", unit="config"):
@@ -123,9 +118,9 @@ def benchmark_scaling(
         .sort_values("workers")
     )
 
-    # ------------------------------------------------------------------ #
-    # Construção do gráfico                                              #
-    # ------------------------------------------------------------------ #
+    
+    # Construção do gráfico                               
+    
     fig = px.line(
         df,
         x="workers",
@@ -145,9 +140,9 @@ def benchmark_scaling(
     return fig, df
 
 
-# ---------------------------------------------------------------------- #
-# Helper para salvar figura                                              #
-# ---------------------------------------------------------------------- #
+
+# Helper para salvar figura                               
+
 def save_last_plot(fig, fname: str, fmt: str = "png", scale: int = 2):
     """Tenta gravar *fname* no formato indicado usando `kaleido`."""
     with contextlib.suppress(Exception):
@@ -157,9 +152,9 @@ def save_last_plot(fig, fname: str, fmt: str = "png", scale: int = 2):
         print(f"📊  Gráfico salvo em {fname}")
 
 
-# ---------------------------------------------------------------------- #
-# Execução direta opcional                                               #
-# ---------------------------------------------------------------------- #
+
+# Execução direta opcional                                
+
 if __name__ == "__main__":  # pragma: no cover (uso principal é via import)
     # exemplo rápido: python benchmark_utils.py 1,4,8
     import sys

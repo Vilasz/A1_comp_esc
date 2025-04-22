@@ -22,9 +22,9 @@ from faker import Faker
 
 fk = Faker("pt_BR")
 
-# ---------------------------------------------------------------------------
+
 # Configuração
-# ---------------------------------------------------------------------------
+
 PRODUCTS: List[str] = [
     "Notebook", "Mouse", "Teclado", "Smartphone", "Fone de Ouvido",
     "Monitor", "Cadeira Gamer", "Mesa para Computador", "Impressora",
@@ -52,9 +52,9 @@ CENTERS: List[str] = [
     "Porto Alegre", "Salvador", "Manaus", "Brasília", "Fortaleza", "Cuiabá",
 ]
 
-# ---------------------------------------------------------------------------
+
 # DDL – cria tabelas se não existirem
-# ---------------------------------------------------------------------------
+
 DDL = [
     """CREATE TABLE IF NOT EXISTS clientes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,17 +96,17 @@ DDL = [
         );""",
 ]
 
-# ---------------------------------------------------------------------------
+
 # Funções helpers
-# ---------------------------------------------------------------------------
+
 
 def _json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False)
 
 
-# ---------------------------------------------------------------------------
+
 # Populadores individuais
-# ---------------------------------------------------------------------------
+
 
 def populate_clientes(cur: sqlite3.Cursor, n: int) -> None:
     for i in range(1, n + 1):
@@ -236,9 +236,9 @@ def populate_entregas(cur: sqlite3.Cursor) -> None:
             ),
         )
 
-# ---------------------------------------------------------------------------
+
 # Função principal
-# ---------------------------------------------------------------------------
+
 
 def populate_database(db_path: Path, n_clientes: int, n_categorias: int, n_pedidos: int) -> None:
     conn = sqlite3.connect(db_path)
@@ -262,9 +262,9 @@ def populate_database(db_path: Path, n_clientes: int, n_categorias: int, n_pedid
     conn.close()
     print("Base populada com sucesso →", db_path.resolve())
 
-# ---------------------------------------------------------------------------
+
 # CLI
-# ---------------------------------------------------------------------------
+
 
 def _parse() -> argparse.Namespace:  # pragma: no cover
     p = argparse.ArgumentParser(description="Popula banco ecommerce.db com dados fictícios")

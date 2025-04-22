@@ -1,14 +1,6 @@
 # etl_pipeline.py
 """ETL Pipeline reimplementado em Python
 
-Este módulo contém uma implementação completa dos componentes de ETL (Extract, Transform, Load)
-convertidos de C++ para Python. Ele suporta execução paralela usando *threading*, controle
-concor­rente de estado compartilhado com *MapMutex* e strategies para extração de dados
-(CSV, TXT) e carregamento em SQLite.
-
-Requisitos de instalação:
-    pip install pandas sqlalchemy
-
 Estrutura Geral:
     ├─ MapMutex               – dicionário thread‑safe com locks por‑chave
     ├─ Strategy Pattern       – CSVExtractor, TXTExtractor, SQLLoader
@@ -18,8 +10,6 @@ Estrutura Geral:
     ├─ LoaderThread           – escreve DataFrames no SQLite
     └─ main()                 – orquestra o pipeline
 
-Todas as funções são *type‑hinted*, possuem logging robusto e tratamento de exceções para
-permitir execução estável em produção.
 """
 from __future__ import annotations
 
@@ -36,16 +26,16 @@ from typing import Any, Dict, Optional, Tuple
 import pandas as pd
 from sqlalchemy import create_engine
 
-# ---------------------------------------------------------------------------
+
 # Configuração de logging
-# ---------------------------------------------------------------------------
+
 LOG_FORMAT = "%(asctime)s [%(levelname)8s] [%(threadName)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# MapMutex – dicionário thread‑safe (equivalente ao MapMutex<string> de C++)
-# ---------------------------------------------------------------------------
+
+# MapMutex – dicionário thread‑safe 
+
 class MapMutex:
     """Dicionário protegido por locks individuais por chave."""
 
@@ -73,15 +63,15 @@ class MapMutex:
     def set(self, key: str, value: Any) -> None:
         self._data[key] = value
 
-# ---------------------------------------------------------------------------
+
 # Strategy Pattern para extração/carregamento
-# ---------------------------------------------------------------------------
+
 class BaseStrategy:
-    def extract(self) -> pd.DataFrame:  # noqa: D401
+    def extract(self) -> pd.DataFrame:  
         """Extrai dados e devolve *DataFrame*. Subclasses devem implementar."""
         raise NotImplementedError
 
-    def load(self, df: pd.DataFrame) -> None:  # noqa: D401
+    def load(self, df: pd.DataFrame) -> None:  
         """Carrega *DataFrame* de entrada em destino. Subclasses devem implementar."""
         raise NotImplementedError
 
@@ -106,7 +96,7 @@ class TXTExtractor(BaseStrategy):
         logger.info("Lendo TXT %s", self.path)
         return pd.read_csv(self.path, sep="|", header=None)
 
-    def load(self, df: pd.DataFrame) -> None:  # noqa: D401
+    def load(self, df: pd.DataFrame) -> None:  
         raise RuntimeError("TXTExtractor não implementa load()")
 
 # SQL ----------------------------------------------------------------------
@@ -116,16 +106,16 @@ class SQLLoader(BaseStrategy):
     table_name: str
     if_exists: str = "append"
 
-    def extract(self) -> pd.DataFrame:  # noqa: D401
+    def extract(self) -> pd.DataFrame:  
         raise RuntimeError("SQLLoader não implementa extract()")
 
     def load(self, df: pd.DataFrame) -> None:
         logger.info("Gravando %d linhas em '%s'", len(df), self.table_name)
         df.to_sql(self.table_name, self.engine, if_exists=self.if_exists, index=False)
 
-# ---------------------------------------------------------------------------
-# RepoData – delega para strategy ativo, imitando interface C++
-# ---------------------------------------------------------------------------
+
+# RepoData – delega para strategy ativo
+
 class RepoData:
     class StrategyType:
         CSV = "csv"
@@ -135,7 +125,6 @@ class RepoData:
     def __init__(self) -> None:
         self._strategy: Optional[BaseStrategy] = None
 
-    # Interface *C++‑like* --------------------------------------------------
     def setStrategy(
         self,
         strategy_type: str,
@@ -156,7 +145,7 @@ class RepoData:
         else:
             raise ValueError(f"StrategyType desconhecido: {strategy_type}")
 
-    # Facade ---------------------------------------------------------------
+    # Facade 
     def extractData(self) -> pd.DataFrame:
         if not self._strategy:
             raise RuntimeError("Strategy não configurada")
@@ -167,9 +156,9 @@ class RepoData:
             raise RuntimeError("Strategy não configurada")
         self._strategy.load(df)
 
-# ---------------------------------------------------------------------------
+
 # ThreadWrapper – base para threads do pipeline
-# ---------------------------------------------------------------------------
+
 class ThreadWrapper(threading.Thread):
     def __init__(
         self,
@@ -188,14 +177,14 @@ class ThreadWrapper(threading.Thread):
         self._running.clear()
 
     @property
-    def running(self) -> bool:  # noqa: D401
+    def running(self) -> bool:  
         return self._running.is_set()
 
     # Cada sub‑classe deve sobrepor run()
 
-# ---------------------------------------------------------------------------
+
 # ExtractThread
-# ---------------------------------------------------------------------------
+
 class ExtractThread(ThreadWrapper):
     """Responsável por extrair DataFrames a partir de arquivos."""
 
@@ -210,8 +199,7 @@ class ExtractThread(ThreadWrapper):
         self.map_mutex = map_mutex
         self.repo_data = RepoData()
 
-    # ------------------------------------------------------------------
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:  
         logger.info("%s iniciado", self.name)
         while self.running:
             try:
@@ -223,13 +211,12 @@ class ExtractThread(ThreadWrapper):
                 df = self._handle_key(key, value)
                 if df is not None and self.out_queue is not None:
                     self.out_queue.put((key, df))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  
                 logger.exception("Erro processando chave %s: %s", key, exc)
             finally:
                 self.in_queue.task_done()
         logger.info("%s finalizado", self.name)
 
-    # ------------------------------------------------------------------
     def _handle_key(self, key: str, value: str) -> Optional[pd.DataFrame]:
         if key == "produtos":
             self.repo_data.setStrategy(RepoData.StrategyType.CSV, "../simulator/data/contaverde/products.txt")
@@ -249,7 +236,6 @@ class ExtractThread(ThreadWrapper):
             logger.warning("Chave desconhecida: %s", key)
             return None
 
-    # ------------------------------------------------------------------
     def _handle_datacat(self) -> Optional[pd.DataFrame]:
         base_path = Path("../simulator/data/datacat/behaviour/")
         if not base_path.exists():
@@ -273,9 +259,9 @@ class ExtractThread(ThreadWrapper):
             return pd.concat(dfs, ignore_index=True)
         return None
 
-# ---------------------------------------------------------------------------
+
 # LoaderThread
-# ---------------------------------------------------------------------------
+
 class LoaderThread(ThreadWrapper):
     """Carrega DataFrames extraídos no SQLite e registra tempos de execução."""
 
@@ -293,8 +279,7 @@ class LoaderThread(ThreadWrapper):
         self._times_file_lock = threading.Lock()
         self._times_file_path = Path("times.txt")
 
-    # ------------------------------------------------------------------
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:  
         logger.info("%s iniciado", self.name)
         while self.running:
             try:
@@ -311,13 +296,12 @@ class LoaderThread(ThreadWrapper):
                     self._meta.add(key_name)
                 self.repo_data.loadData(df)
                 self._log_time(key_name, key_time)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  
                 logger.exception("Erro carregando chave %s: %s", key, exc)
             finally:
                 self.in_queue.task_done()
         logger.info("%s finalizado", self.name)
 
-    # ------------------------------------------------------------------
     @staticmethod
     def _split_key(key: str) -> Tuple[str, str]:
         if " " in key:
@@ -331,9 +315,9 @@ class LoaderThread(ThreadWrapper):
         with self._times_file_lock, self._times_file_path.open("a", encoding="utf-8") as f:
             f.write(f"{key_name} {key_time} {now_ns}\n")
 
-# ---------------------------------------------------------------------------
+
 # Função utilitária para enfileirar tarefas
-# ---------------------------------------------------------------------------
+
 TASKS = [
     ("produtos", ""),
     ("estoque", ""),
@@ -347,11 +331,11 @@ def enqueue_initial_tasks(q: "queue.Queue[Tuple[str, str]]") -> None:
     for item in TASKS:
         q.put(item)
 
-# ---------------------------------------------------------------------------
-# main() – orquestração do pipeline
-# ---------------------------------------------------------------------------
 
-def main() -> None:  # noqa: D401
+# main() – orquestração do pipeline
+
+
+def main() -> None:  
     extract_q: "queue.Queue[Tuple[str, str]]" = queue.Queue()
     load_q: "queue.Queue[Tuple[str, pd.DataFrame]]" = queue.Queue()
 

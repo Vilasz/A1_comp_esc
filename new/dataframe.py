@@ -17,7 +17,6 @@ T = TypeVar("T")
 K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
 
-# Union análogo ao DefaultObject do C++ ------------------------------------
 DefaultObject = Union[int, bool, float, str, "DateTime", "TimeDelta"]
 
 def _use_numpy(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
@@ -32,9 +31,9 @@ def _use_numpy(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
 
     return wrapper
 
-# ---------------------------------------------------------------------------
+ 
 # TimeDelta & DateTime – wrappers sobre datetime / timedelta
-# ---------------------------------------------------------------------------
+
 @dataclasses.dataclass
 class TimeDelta:
     """Compatível com a struct C++ homônima."""
@@ -93,7 +92,7 @@ class DateTime:
 
     _dt: _dt = dataclasses.field(default_factory=lambda: _dt.fromtimestamp(time.time()))
 
-    # Construtores extras --------------------------------------------------
+    # Construtores extras 
     @classmethod
     def now(cls) -> "DateTime":
         return cls(_dt.now())
@@ -118,7 +117,7 @@ class DateTime:
     def from_string(cls, s: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> "DateTime":
         return cls(_dt.strptime(s, fmt))
 
-    # Métodos C++‑like ------------------------------------------------------
+    # Métodos C++‑like 
     def year(self) -> int:
         return self._dt.year
 
@@ -164,7 +163,7 @@ class DateTime:
     def strftime(self, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
         return self._dt.strftime(fmt)
 
-    # Operadores -----------------------------------------------------------
+    # Operadores 
     def __sub__(self, other: "DateTime") -> TimeDelta:  # noqa: D401
         return TimeDelta.from_timedelta(self._dt - other._dt)
 
@@ -195,9 +194,9 @@ class DateTime:
     def __repr__(self) -> str:  # pragma: no cover
         return f"<DateTime {self}>"
 
-# ---------------------------------------------------------------------------
+
 # Series – estrutura unidimensional (lista tipada por DefaultObject)
-# ---------------------------------------------------------------------------
+
 class Series(Generic[T]):
     """Série de valores heterogêneos (ou não).
 
@@ -210,9 +209,9 @@ class Series(Generic[T]):
     def __init__(self, data: Optional[Sequence[T]] = None) -> None:
         self._data: List[T] = list(data) if data is not None else []
 
-    # ------------------------------------------------------------------
+    
     # Acesso / mutação
-    # ------------------------------------------------------------------
+    
     def append(self, value: T) -> None:
         self._data.append(value)
 
@@ -231,9 +230,9 @@ class Series(Generic[T]):
     def __len__(self) -> int:
         return len(self._data)
 
-    # ------------------------------------------------------------------
+    
     # Operações aritméticas element‑wise
-    # ------------------------------------------------------------------
+    
     def _binary_op(self, other: Union["Series", T], op: Callable[[Any, Any], Any]) -> "Series":
         if isinstance(other, Series):
             if len(self) != len(other):  # pragma: no cover
@@ -257,7 +256,7 @@ class Series(Generic[T]):
     def div(self, other: Union["Series", T]) -> "Series":
         return self._binary_op(other, lambda a, b: a / b)
 
-    # Comparações -----------------------------------------------------------
+    # Comparações 
     def compare(self, value: Any, op: str) -> "Series[bool]":
         ops: Dict[str, Callable[[Any, Any], bool]] = {
             "==": lambda a, b: a == b,
@@ -271,14 +270,14 @@ class Series(Generic[T]):
             raise ValueError("Invalid operator")
         return Series([ops[op](v, value) for v in self])
 
-    # Conversões -----------------------------------------------------------
+    # Conversões 
     def astype(self, cast: Callable[[T], V]) -> "Series[V]":  # type: ignore[type‑var]
         return Series([cast(v) for v in self])
 
     def to_datetime(self) -> "Series[DateTime]":
         return Series(DateTime.from_string(str(v)) if not isinstance(v, DateTime) else v for v in self)  # type: ignore[arg‑type]
 
-    # Utilidades -----------------------------------------------------------
+    # Utilidades 
     def copy(self) -> "Series[T]":
         return Series(self._data.copy())
 
@@ -295,9 +294,9 @@ class Series(Generic[T]):
         for v in self:
             print(f"{v!s:>{padding}}")
 
-# ---------------------------------------------------------------------------
+
 # DataFrame – matriz 2D de Series
-# ---------------------------------------------------------------------------
+
 class DataFrame(Generic[T]):
     """Estrutura tabular minimalista.
 
@@ -316,12 +315,12 @@ class DataFrame(Generic[T]):
             raise ValueError("Columns and series must have the same size")
         self._update_shape()
 
-    # Interno --------------------------------------------------------------
+    # Interno 
     def _update_shape(self) -> None:
         rows = self.series[0].shape() if self.series else 0
         self.shape: Tuple[int, int] = (rows, len(self.series))
 
-    # Criação --------------------------------------------------------------
+    # Criação 
     def copy(self) -> "DataFrame[T]":
         return DataFrame(self.columns.copy(), [s.copy() for s in self.series])
 
@@ -349,7 +348,7 @@ class DataFrame(Generic[T]):
             self[col].append(row[col])  # type: ignore[index]
         self._update_shape()
 
-    # Indexing -------------------------------------------------------------
+    # Indexing 
     def __getitem__(self, key: Union[str, Sequence[str]]) -> Union[Series[T], "DataFrame[T]"]:
         if isinstance(key, str):
             if key not in self.columns:
@@ -364,7 +363,7 @@ class DataFrame(Generic[T]):
                 df.add_column(k, self[k].copy())  # type: ignore[arg‑type]
             return df
 
-    # Manipulação ----------------------------------------------------------
+    # Manipulação 
     def drop_column(self, name: str) -> None:
         if name not in self.columns:
             raise KeyError(name)
@@ -488,7 +487,7 @@ class DataFrame(Generic[T]):
             df.append(row)
         return df
 
-    # Visualização ---------------------------------------------------------
+    # Visualização 
     def print(self, width: int = 20) -> None:
         for col in self.columns:
             print(f"{col:>{width}}", end="")
@@ -498,6 +497,6 @@ class DataFrame(Generic[T]):
                 print(f"{s[i]!s:>{width}}", end="")
             print()
 
-    # Dunder helpers -------------------------------------------------------
+    # Dunder helpers 
     def __repr__(self) -> str:  # noqa: D401
         return f"<DataFrame rows={self.shape[0]} cols={self.shape[1]}>"

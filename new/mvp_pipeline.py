@@ -1,17 +1,7 @@
 # mvp_pipeline.py  (v5 — heavy‑load, métricas ricas e pool híbrido)
 """
-ETL paralelizado ultra‑robusto para datasets gigantes gerados por data_generators.py.
+ETL paralelizado  para datasets gigantes gerados por data_generators.py.
 
-Evoluções v5
-------------
-* **Suporte às 17 colunas novas** (preco_unitario, valor_total, canal_venda,
-  estado_cliente, …).
-* Calcula **três agregados** simultâneos no worker:
-    1. (produto, centro) → (valor_total, quantidade)              ‑ original
-    2. canal_venda        → valor_total
-    3. estado_cliente     → quantidade
-* Usa **HybridPool** do `miniframework` — nunca passa de 12 CPUs.
-* Métricas histogram/contador publicadas no relatório.
 """
 
 from __future__ import annotations
@@ -35,9 +25,9 @@ from metrics import METRICS
 from worker import process_chunk, merge_int, merge_num, merge_pair
 
 
-###############################################################################
-# MAIN PIPELINE ###############################################################
-###############################################################################
+
+# MAIN PIPELINE 
+
 
 
 def run_pipeline(
@@ -52,22 +42,22 @@ def run_pipeline(
     chunksize: int | None,
     regenerate: bool,
 ):
-    # -------- (re)gera dados --------------------------------------------
+    #  (re)gera dados 
     if regenerate or not csv_path.exists():
         generate_csv(csv_size, csv_path)
     if regenerate or not json_path.exists():
         generate_json(json_size, json_path)
 
-    # -------- carrega ----------------------------------------------------
+    #  carrega 
     records = load_csv(csv_path) + load_json(json_path)
     total = len(records)
 
-    # -------- partição em chunks ----------------------------------------
+    #  partição em chunks 
     if not chunksize:
         chunksize = max(int(2_000_000 / 120), 20_000)  # 120 ≈ bytes/registro
     chunks = [records[i : i + chunksize] for i in range(0, total, chunksize)]
 
-    # -------- processamento paralelo ------------------------------------
+    #  processamento paralelo 
     wall_start = time.perf_counter()
 
     glob_pc: Dict[Tuple[str, str], Tuple[float, int]] = {}
@@ -86,13 +76,13 @@ def run_pipeline(
     pool.shutdown()
     wall_dur = time.perf_counter() - wall_start
 
-    # -------- grava SQLite ----------------------------------------------
+    #  grava SQLite 
     conn = sqlite3.connect(db_path)
     ensure_table(conn)
     upsert(conn, glob_pc, glob_canal, glob_estado)
     conn.close()
 
-    # -------- relatório --------------------------------------------------
+    #  relatório 
     thr = total / wall_dur
     print("\n=========== REPORT ===========")
     print(f"Workers (hybrid) : {workers}  (máx CPU {CPU_LIMIT})")
@@ -113,9 +103,6 @@ def run_pipeline(
     print("\n--- Métricas internas ---\n", METRICS.report())
     print("==============================")
 
-###############################################################################
-# CLI #########################################################################
-###############################################################################
 
 
 def _parse() -> argparse.Namespace:

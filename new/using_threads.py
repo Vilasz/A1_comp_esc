@@ -8,15 +8,15 @@ import logging
 from dataframe import Generic, K, V, T
 
 
-# ---------------------------------------------------------------------------
+
 # Configuração de logging
-# ---------------------------------------------------------------------------
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)10s] %(levelname)8s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
+
 # Queue – fila thread‑safe com capacidade (Condition + deque opcional)
-# ---------------------------------------------------------------------------
+
 class Queue(Generic[K, V]):
     def __init__(self, capacity: int = 1000):
         self._capacity = capacity
@@ -40,13 +40,12 @@ class Queue(Generic[K, V]):
             self._cv.notify_all()
             return item
 
-    # alias para manter compat. com C++ -----------------------------------
     enQueue = enqueue
     deQueue = dequeue
 
-# ---------------------------------------------------------------------------
+
 # MapMutex – locks por‑chave, devolvendo context manager
-# ---------------------------------------------------------------------------
+
 class MapMutex(Generic[T]):
     def __init__(self) -> None:
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
@@ -63,18 +62,17 @@ class MapMutex(Generic[T]):
         finally:
             lock.release()
 
-    # Métodos C++‑like -----------------------------------------------------
     def get(self, key: str, default: T | None = None) -> T:
         with self._global:
-            return self._data.get(key, default)  # type: ignore[return‑value]
+            return self._data.get(key, default)  
 
     def set(self, key: str, value: T) -> None:
         with self._global:
             self._data[key] = value
 
-# ---------------------------------------------------------------------------
+
 # ThreadWrapper – classe base para threads reutilizável
-# ---------------------------------------------------------------------------
+
 class ThreadWrapper(Generic[K, V], threading.Thread):
     """Abstração similar ao template C++.
 
@@ -99,12 +97,12 @@ class ThreadWrapper(Generic[K, V], threading.Thread):
         self._process = None
         threading.Thread.__init__(self, name=name, daemon=True)
 
-    # Overridable ---------------------------------------------------------
-    def handle(self, item: Tuple[K, V]) -> Optional[Tuple[K, V]]:  # noqa: D401
+    # Overridable
+    def handle(self, item: Tuple[K, V]) -> Optional[Tuple[K, V]]:  
         raise NotImplementedError
 
-    # Loop ----------------------------------------------------------------
-    def run(self) -> None:  # noqa: D401
+    # Loop 
+    def run(self) -> None:  
         logger.info("%s started (mp=%s)", self.name, self.use_mp)
         while self._running.is_set():
             try:
@@ -115,10 +113,10 @@ class ThreadWrapper(Generic[K, V], threading.Thread):
                 result = self.handle(item)
                 if result is not None and self.out_queue is not None:
                     self.out_queue.enqueue(result)
-            except Exception:  # noqa: BLE001
+            except Exception:  
                 logger.exception("Error in thread %s", self.name)
         logger.info("%s stopped", self.name)
 
-    # Control -------------------------------------------------------------
+    # Control 
     def stop(self) -> None:
         self._running.clear()
