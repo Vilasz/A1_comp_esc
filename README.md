@@ -2,9 +2,6 @@
 
 ## Entrega final: pipeline ETL de Plataforma de E-commerce e Gestão de Cadeia de Suprimentos
 O projeto escolhido para mostrar aplicações do nosso micro-framework foi uma Plataforma de E-commerce e Gestão de Cadeia de Suprimentos.
-O pipeline de exemplo criado foi o seguinte:
-
-<img src='imgs/final_pipe.jpg' />
 
 ### Código e como rodar
 Primeiramente, baixo o pacote <tqdm> utilizando o instalador de pacote de sua preferência
