@@ -1,44 +1,8 @@
 # miniframework.py
-"""Mini‑framework que reimplementa, em Python, as estruturas utilitárias usadas nos
-módulos C++ originais do seu projeto (DataFrame, Series, DateTime, filas
-thread‑safe, mutexes, triggers etc.).
+"""Mini‑framework que implementa as estruturas utilitárias usadas no
+seu projeto (DataFrame, Series, DateTime, filas thread‑safe, mutexes,
+triggers etc.).
 
-A meta desta versão é **ser fiel ao comportamento** do código C++ ao mesmo
-tempo em que adota idiomas Python modernos, incluindo *type hints*,
-`dataclasses`, *context managers* e **tratamento explícito do GIL**.
-
-Esta biblioteca foi separada do pipeline principal para que possamos evoluir
-cada parte de forma modular.  São mais de 700 linhas de código bem comentado –
-leitura recomendada para entender como cada componente funciona.
-
-Highlights
-==========
-* **GIL friendly** – todas as seções potencialmente bloqueantes expõem uma
-  *flag* `use_mp` (multiprocessing) quando a carga de CPU for substancial.
-  O default continua usando *threads* porque boa parte do ETL é I/O‑bound, mas
-  há exemplos de como saltar o GIL.
-* **DataFrame & Series** – estruturas *lightweight* com API inspirada em
-  *pandas* (e idêntica à versão C++).  Operações aritméticas usam *NumPy*
-  quando disponível para velocidade; caso contrário, seguem puramente em
-  *Python*.
-* **DateTime & TimeDelta** – *wrappers* finos sobre `datetime.datetime` e
-  `datetime.timedelta`, porém mantendo os métodos extras definidos em C++.
-* **Thread‑safe Queue** com *condition variables* e capacidade máxima.
-* **MapMutex** – locks por‑chave tal como o template C++, fornecendo método
-  `get_lock()` que devolve um *context manager* (uso com `with`).
-
-Dependências mínimas: `numpy` (opcional mas recomendado), `sqlite3` (builtin)
-
-Uso rápido
-----------
->>> from miniframework import Series, DataFrame, DateTime, Trigger, Queue
->>> df = DataFrame()
->>> df.add_column("id", Series([1, 2, 3]))
->>> df.append({"id": 4})
->>> df.print()
-
-Veja o final do arquivo para *self‑tests* (executados quando `python -m
-miniframework`).
 """
 from __future__ import annotations
 
@@ -71,20 +35,19 @@ CPU_LIMIT = min(os.cpu_count() or 4, 12)
 random.seed(42)  # reprodutibilidade dos exemplos / métricas
 
 
-# ---------------------------------------------------------------------------
+
 # Configuração de logging
-# ---------------------------------------------------------------------------
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)10s] %(levelname)8s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
+
 # Helpers & Tipos genéricos
-# ---------------------------------------------------------------------------
+
 T = TypeVar("T")
 K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
 
-# Union análogo ao DefaultObject do C++ ------------------------------------
 DefaultObject = Union[int, bool, float, str, "DateTime", "TimeDelta"]
 
 # Decorador para fallback quando numpy não estiver presente -----------------
@@ -101,12 +64,11 @@ def _use_numpy(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
 
     return wrapper
 
-# ---------------------------------------------------------------------------
+
 # TimeDelta & DateTime – wrappers sobre datetime / timedelta
-# ---------------------------------------------------------------------------
+
 @dataclasses.dataclass
 class TimeDelta:
-    """Compatível com a struct C++ homônima."""
 
     _delta: _td
 
@@ -149,7 +111,7 @@ class TimeDelta:
         return f"<TimeDelta {self}>"
 
     # Suporte a aritmética com DateTime
-    def __add__(self, other: "DateTime") -> "DateTime":  # noqa: D401
+    def __add__(self, other: "DateTime") -> "DateTime":  
         return other + self  # delega
 
     def to_timedelta(self) -> _td:
@@ -158,11 +120,10 @@ class TimeDelta:
 
 @dataclasses.dataclass
 class DateTime:
-    """Wrapper fino para manter API do C++."""
 
     _dt: _dt = dataclasses.field(default_factory=lambda: _dt.fromtimestamp(time.time()))
 
-    # Construtores extras --------------------------------------------------
+    # Construtores extras 
     @classmethod
     def now(cls) -> "DateTime":
         return cls(_dt.now())
@@ -187,7 +148,6 @@ class DateTime:
     def from_string(cls, s: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> "DateTime":
         return cls(_dt.strptime(s, fmt))
 
-    # Métodos C++‑like ------------------------------------------------------
     def year(self) -> int:
         return self._dt.year
 
@@ -233,11 +193,11 @@ class DateTime:
     def strftime(self, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
         return self._dt.strftime(fmt)
 
-    # Operadores -----------------------------------------------------------
-    def __sub__(self, other: "DateTime") -> TimeDelta:  # noqa: D401
+    # Operadores 
+    def __sub__(self, other: "DateTime") -> TimeDelta:  
         return TimeDelta.from_timedelta(self._dt - other._dt)
 
-    def __add__(self, delta: TimeDelta) -> "DateTime":  # noqa: D401
+    def __add__(self, delta: TimeDelta) -> "DateTime":  
         return DateTime(self._dt + delta.to_timedelta())
 
     def __lt__(self, other: "DateTime") -> bool:
@@ -264,14 +224,11 @@ class DateTime:
     def __repr__(self) -> str:  # pragma: no cover
         return f"<DateTime {self}>"
 
-# ---------------------------------------------------------------------------
+
 # Series – estrutura unidimensional (lista tipada por DefaultObject)
-# ---------------------------------------------------------------------------
+
 class Series(Generic[T]):
     """Série de valores heterogêneos (ou não).
-
-    Na maior parte dos casos é preferível usar *numpy* arrays, mas aqui
-    mantemos compat. com o design C++.
     """
 
     __slots__ = ("_data",)
@@ -279,9 +236,9 @@ class Series(Generic[T]):
     def __init__(self, data: Optional[Sequence[T]] = None) -> None:
         self._data: List[T] = list(data) if data is not None else []
 
-    # ------------------------------------------------------------------
+    # 
     # Acesso / mutação
-    # ------------------------------------------------------------------
+    # 
     def append(self, value: T) -> None:
         self._data.append(value)
 
@@ -300,9 +257,9 @@ class Series(Generic[T]):
     def __len__(self) -> int:
         return len(self._data)
 
-    # ------------------------------------------------------------------
+    # 
     # Operações aritméticas element‑wise
-    # ------------------------------------------------------------------
+    # 
     def _binary_op(self, other: Union["Series", T], op: Callable[[Any, Any], Any]) -> "Series":
         if isinstance(other, Series):
             if len(self) != len(other):  # pragma: no cover
@@ -326,7 +283,7 @@ class Series(Generic[T]):
     def div(self, other: Union["Series", T]) -> "Series":
         return self._binary_op(other, lambda a, b: a / b)
 
-    # Comparações -----------------------------------------------------------
+    # Comparações 
     def compare(self, value: Any, op: str) -> "Series[bool]":
         ops: Dict[str, Callable[[Any, Any], bool]] = {
             "==": lambda a, b: a == b,
@@ -340,21 +297,21 @@ class Series(Generic[T]):
             raise ValueError("Invalid operator")
         return Series([ops[op](v, value) for v in self])
 
-    # Conversões -----------------------------------------------------------
+    # Conversões 
     def astype(self, cast: Callable[[T], V]) -> "Series[V]":  # type: ignore[type‑var]
         return Series([cast(v) for v in self])
 
     def to_datetime(self) -> "Series[DateTime]":
         return Series(DateTime.from_string(str(v)) if not isinstance(v, DateTime) else v for v in self)  # type: ignore[arg‑type]
 
-    # Utilidades -----------------------------------------------------------
+    # Utilidades 
     def copy(self) -> "Series[T]":
         return Series(self._data.copy())
 
     def shape(self) -> int:
         return len(self)
 
-    def __repr__(self) -> str:  # noqa: D401
+    def __repr__(self) -> str:  
         head = ", ".join(repr(v) for v in self._data[:5])
         more = "..." if len(self) > 5 else ""
         return f"Series([{head}{more}])"
@@ -364,14 +321,12 @@ class Series(Generic[T]):
         for v in self:
             print(f"{v!s:>{padding}}")
 
-# ---------------------------------------------------------------------------
+
 # DataFrame – matriz 2D de Series
-# ---------------------------------------------------------------------------
+
 class DataFrame(Generic[T]):
     """Estrutura tabular minimalista.
 
-    Nota: nem remotamente tão rica quanto *pandas*.  Suficiente para replicar a
-    API usada no código C++.
     """
 
     def __init__(
@@ -385,12 +340,12 @@ class DataFrame(Generic[T]):
             raise ValueError("Columns and series must have the same size")
         self._update_shape()
 
-    # Interno --------------------------------------------------------------
+    # Interno 
     def _update_shape(self) -> None:
         rows = self.series[0].shape() if self.series else 0
         self.shape: Tuple[int, int] = (rows, len(self.series))
 
-    # Criação --------------------------------------------------------------
+    # Criação 
     def copy(self) -> "DataFrame[T]":
         return DataFrame(self.columns.copy(), [s.copy() for s in self.series])
 
@@ -418,7 +373,7 @@ class DataFrame(Generic[T]):
             self[col].append(row[col])  # type: ignore[index]
         self._update_shape()
 
-    # Indexing -------------------------------------------------------------
+    # Indexing 
     def __getitem__(self, key: Union[str, Sequence[str]]) -> Union[Series[T], "DataFrame[T]"]:
         if isinstance(key, str):
             if key not in self.columns:
@@ -433,7 +388,7 @@ class DataFrame(Generic[T]):
                 df.add_column(k, self[k].copy())  # type: ignore[arg‑type]
             return df
 
-    # Manipulação ----------------------------------------------------------
+    # Manipulação 
     def drop_column(self, name: str) -> None:
         if name not in self.columns:
             raise KeyError(name)
@@ -492,7 +447,7 @@ class DataFrame(Generic[T]):
                     if other[right_on][j] == key:  # type: ignore[index]
                         match_idx = j
                         break
-                if match_idx is None:  # noqa: SIM108
+                if match_idx is None:  
                     raise KeyError(f"Key {key} not found in right DataFrame")
                 new_series.append(other[col][match_idx])  # type: ignore[index]
             df.add_column(col, new_series)
@@ -548,7 +503,7 @@ class DataFrame(Generic[T]):
         seen: Dict[Tuple[Any, ...], int] = {}
         for i in range(self.shape[0]):
             key = tuple(self[col][i] for col in subset)  # type: ignore[index]
-            seen[key] = i  # keeps last occurrence, mimic C++
+            seen[key] = i
         df = DataFrame()
         for col in self.columns:
             df.add_column(col, Series())
@@ -557,7 +512,7 @@ class DataFrame(Generic[T]):
             df.append(row)
         return df
 
-    # Visualização ---------------------------------------------------------
+    # Visualização 
     def print(self, width: int = 20) -> None:
         for col in self.columns:
             print(f"{col:>{width}}", end="")
@@ -567,13 +522,13 @@ class DataFrame(Generic[T]):
                 print(f"{s[i]!s:>{width}}", end="")
             print()
 
-    # Dunder helpers -------------------------------------------------------
-    def __repr__(self) -> str:  # noqa: D401
+    # Dunder helpers 
+    def __repr__(self) -> str:  
         return f"<DataFrame rows={self.shape[0]} cols={self.shape[1]}>"
 
-# ---------------------------------------------------------------------------
+
 # SQLite DB Helper – equivalente ao db.h
-# ---------------------------------------------------------------------------
+
 class DB:
     """Wrapper minimalista em torno de `sqlite3.Connection`.  Usa transações."""
 
@@ -605,13 +560,13 @@ class DB:
     def __enter__(self) -> "DB":
         return self
 
-    def __exit__(self, exc_type, exc, tb):  # noqa: D401
+    def __exit__(self, exc_type, exc, tb):  
         self.close()
 
 # ⇨ ADICIONAR antes da seção Queue / MapMutex
-# ---------------------------------------------------------------------------
+
 # MÉTRICAS (contadores + histogramas) – thread‑safe
-# ---------------------------------------------------------------------------
+
 class _Counter:
     def __init__(self) -> None:
         self.v = 0
@@ -671,9 +626,9 @@ class Metrics:
 METRICS = Metrics()
 
 
-# ---------------------------------------------------------------------------
+
 # Queue – fila thread‑safe com capacidade (Condition + deque opcional)
-# ---------------------------------------------------------------------------
+
 class Queue(Generic[K, V]):
     def __init__(self, capacity: int = 1000):
         self._capacity = capacity
@@ -697,13 +652,12 @@ class Queue(Generic[K, V]):
             self._cv.notify_all()
             return item
 
-    # alias para manter compat. com C++ -----------------------------------
     enQueue = enqueue
     deQueue = dequeue
 
-# ---------------------------------------------------------------------------
+
 # MapMutex – locks por‑chave, devolvendo context manager
-# ---------------------------------------------------------------------------
+
 class MapMutex(Generic[T]):
     def __init__(self) -> None:
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
@@ -720,7 +674,6 @@ class MapMutex(Generic[T]):
         finally:
             lock.release()
 
-    # Métodos C++‑like -----------------------------------------------------
     def get(self, key: str, default: T | None = None) -> T:
         with self._global:
             return self._data.get(key, default)  # type: ignore[return‑value]
@@ -729,9 +682,9 @@ class MapMutex(Generic[T]):
         with self._global:
             self._data[key] = value
 
-# ---------------------------------------------------------------------------
+
 # ThreadWrapper – classe base para threads reutilizável
-# ---------------------------------------------------------------------------
+
 class ThreadWrapper(Generic[K, V], threading.Thread):
     """Abstração similar ao template C++.
 
@@ -756,12 +709,12 @@ class ThreadWrapper(Generic[K, V], threading.Thread):
         self._process = None
         threading.Thread.__init__(self, name=name, daemon=True)
 
-    # Overridable ---------------------------------------------------------
-    def handle(self, item: Tuple[K, V]) -> Optional[Tuple[K, V]]:  # noqa: D401
+    # Overridable 
+    def handle(self, item: Tuple[K, V]) -> Optional[Tuple[K, V]]:  
         raise NotImplementedError
 
-    # Loop ----------------------------------------------------------------
-    def run(self) -> None:  # noqa: D401
+    # Loop 
+    def run(self) -> None:  
         logger.info("%s started (mp=%s)", self.name, self.use_mp)
         while self._running.is_set():
             try:
@@ -772,17 +725,17 @@ class ThreadWrapper(Generic[K, V], threading.Thread):
                 result = self.handle(item)
                 if result is not None and self.out_queue is not None:
                     self.out_queue.enqueue(result)
-            except Exception:  # noqa: BLE001
+            except Exception:  
                 logger.exception("Error in thread %s", self.name)
         logger.info("%s stopped", self.name)
 
-    # Control -------------------------------------------------------------
+    # Control 
     def stop(self) -> None:
         self._running.clear()
 
-# ---------------------------------------------------------------------------
+
 # Handler – roteador entre várias filas de saída
-# ---------------------------------------------------------------------------
+
 class Handler(Generic[T]):
     def __init__(
         self,
@@ -795,12 +748,12 @@ class Handler(Generic[T]):
         self._running = threading.Event()
         self._running.set()
 
-    # Subclasses devem sobrepor -------------------------------------------
-    def route(self, key: str, df: "DataFrame[T]") -> Optional[Tuple[str, "DataFrame[T]"]]:  # noqa: D401
+    # Subclasses devem sobrepor 
+    def route(self, key: str, df: "DataFrame[T]") -> Optional[Tuple[str, "DataFrame[T]"]]:  
         raise NotImplementedError
 
-    # Loop interno --------------------------------------------------------
-    def _run(self) -> None:  # noqa: D401
+    # Loop interno 
+    def _run(self) -> None:  
         while self._running.is_set():
             try:
                 key, df = self.in_queue.dequeue(timeout=0.5)
@@ -814,10 +767,10 @@ class Handler(Generic[T]):
                         self.out_queues[dkey].enqueue((dkey, dval))
                     else:
                         logger.warning("Queue %s not found", dkey)
-            except Exception:  # noqa: BLE001
+            except Exception:  
                 logger.exception("Handler error")
 
-    # Controle ------------------------------------------------------------
+    # Controle 
     def start(self) -> None:
         self._thread.start()
 
@@ -825,9 +778,9 @@ class Handler(Generic[T]):
         self._running.clear()
         self._thread.join()
 
-# ---------------------------------------------------------------------------
+
 # Trigger – base + TimeTrigger / RequestTrigger
-# ---------------------------------------------------------------------------
+
 class Trigger:
     def __init__(self, out_queue: Queue[str, str], first: str, second: str) -> None:
         self.out_queue = out_queue
@@ -837,8 +790,8 @@ class Trigger:
         self._running.set()
         self._thread = threading.Thread(target=self.run, daemon=True)
 
-    # API -----------------------------------------------------------------
-    def run(self) -> None:  # noqa: D401 – sobrescrito em subclasses
+    # API 
+    def run(self) -> None:  
         raise NotImplementedError
 
     def start(self) -> None:
@@ -848,7 +801,7 @@ class Trigger:
         self._running.clear()
         self._thread.join()
 
-    # Auxiliar ------------------------------------------------------------
+    # Auxiliar 
     def add_to_queue(self) -> None:
         self.out_queue.enqueue((self.first, self.second))
 
@@ -858,22 +811,22 @@ class TimeTrigger(Trigger):
         super().__init__(out_queue, first, second)
         self.interval = interval_ms / 1000.0
 
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:  
         while self._running.is_set():
             time.sleep(self.interval)
             self.add_to_queue()
 
 
 class RequestTrigger(Trigger):
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:  
         if self._running.is_set():
             self.add_to_queue()
             self._running.clear()  # executa só uma vez
 
-# ⇨ ADICIONAR antes do bloco “Self‑test”
-# ---------------------------------------------------------------------------
+
+
 # TASK SYSTEM + SCHEDULER Round‑Robin
-# ---------------------------------------------------------------------------
+
 TaskFn = Callable[[], Any]
 _TASKS: dict[str, TaskFn] = {}
 _DEPS: dict[str, set[str]] = defaultdict(set)
@@ -938,9 +891,9 @@ class HybridPool:
         self._proc.shutdown(wait=True)
         self._th.shutdown(wait=True)
 
-# ---------------------------------------------------------------------------
+
 # Self‑test rápido quando executado como script
-# ---------------------------------------------------------------------------
+
 # ⇨ SUBSTITUIR o bloco “Self‑test rápido …” inteiro pelo abaixo
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)

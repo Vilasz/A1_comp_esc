@@ -8,15 +8,15 @@ import logging
 from dataframe import Generic, K, V, T
 
 
-# ---------------------------------------------------------------------------
+
 # Configuração de logging
-# ---------------------------------------------------------------------------
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)10s] %(levelname)8s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
+
 # Queue – fila thread‑safe com capacidade (Condition + deque opcional)
-# ---------------------------------------------------------------------------
+
 class Queue(Generic[K, V]):
     def __init__(self, capacity: int = 1000):
         self._capacity = capacity
@@ -44,9 +44,9 @@ class Queue(Generic[K, V]):
     enQueue = enqueue
     deQueue = dequeue
 
-# ---------------------------------------------------------------------------
+
 # MapMutex – locks por‑chave, devolvendo context manager
-# ---------------------------------------------------------------------------
+
 class MapMutex(Generic[T]):
     def __init__(self) -> None:
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
@@ -72,9 +72,9 @@ class MapMutex(Generic[T]):
         with self._global:
             self._data[key] = value
 
-# ---------------------------------------------------------------------------
+
 # ThreadWrapper – classe base para threads reutilizável
-# ---------------------------------------------------------------------------
+
 class ThreadWrapper(Generic[K, V], threading.Thread):
     """Abstração similar ao template C++.
 

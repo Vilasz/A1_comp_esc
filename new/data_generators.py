@@ -2,16 +2,12 @@
 """
 Gerador *mock* de pedidos (CSV / JSON) com colunas ricas.
 
-Colunas geradas
----------------
+Colunas geradas:
+
 cliente_id | produto_id | categoria_id | produto | quantidade | preco_unitario
 valor_total | data_pedido | hora_pedido | mes | ano | canal_venda
 centro_logistico_mais_proximo | cidade_cliente | estado_cliente | dias_para_entrega
 
-Uso rápido (CLI)
-----------------
-python data_generators.py csv 1_000_000 pedidos.csv
-python data_generators.py json 400_000 pedidos.json
 """
 from __future__ import annotations
 
@@ -27,9 +23,9 @@ from faker import Faker
 
 fk = Faker("pt_BR")
 
-# ---------------------------------------------------------------------------
+
 # Constantes (podem ser ajustadas para cenários >12 CPUs sem impacto)
-# ---------------------------------------------------------------------------
+
 PRODUCTS: List[str] = [
     "Notebook", "Mouse", "Teclado", "Smartphone", "Fone de Ouvido",
     "Monitor", "Cadeira Gamer", "Mesa para Computador", "Impressora",
@@ -52,7 +48,7 @@ CHANNELS = ["site", "app", "telefone", "loja"]
 CSV_WEIGHTS = [10, 9, 8, 6, 5, 3, 2, 1, 1, 1]
 JSON_WEIGHTS = [12, 10, 6, 4, 3, 2, 2, 1, 1, 1]
 
-# ---------------------------------------------------------------------------
+
 
 
 def _rand_date(start: datetime, end: datetime) -> datetime:
@@ -61,9 +57,9 @@ def _rand_date(start: datetime, end: datetime) -> datetime:
     return start + timedelta(seconds=sec)
 
 
-# ---------------------------------------------------------------------------
+
 # Funções públicas
-# ---------------------------------------------------------------------------
+
 def generate_csv(
     n_rows: int,
     out_path: str | Path = "mock_data_db.csv",
@@ -182,9 +178,9 @@ def generate_json(
     return out_path
 
 
-# ---------------------------------------------------------------------------
+
 # CLI simples
-# ---------------------------------------------------------------------------
+
 
 
 def _parse_args() -> argparse.Namespace:  # pragma: no cover

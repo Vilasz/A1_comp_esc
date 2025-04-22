@@ -5,9 +5,9 @@ import logging
 from dataframe import DataFrame, Generic, T
 from using_threads import Queue
 
-# ---------------------------------------------------------------------------
+
 # Configuração de logging
-# ---------------------------------------------------------------------------
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)10s] %(levelname)8s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -23,11 +23,11 @@ class Handler(Generic[T]):
         self._running = threading.Event()
         self._running.set()
 
-    # Subclasses devem sobrepor -------------------------------------------
+    # Subclasses devem sobrepor
     def route(self, key: str, df: "DataFrame[T]") -> Optional[Tuple[str, "DataFrame[T]"]]:  # noqa: D401
         raise NotImplementedError
 
-    # Loop interno --------------------------------------------------------
+    # Loop interno
     def _run(self) -> None:  # noqa: D401
         while self._running.is_set():
             try:
@@ -45,7 +45,7 @@ class Handler(Generic[T]):
             except Exception:  # noqa: BLE001
                 logger.exception("Handler error")
 
-    # Controle ------------------------------------------------------------
+    # Controle 
     def start(self) -> None:
         self._thread.start()
 

@@ -1,17 +1,7 @@
-# mvp_pipeline.py  (v5 — heavy‑load, métricas ricas e pool híbrido)
+
 """
 ETL paralelizado ultra‑robusto para datasets gigantes gerados por data_generators.py.
 
-Evoluções v5
-------------
-* **Suporte às 17 colunas novas** (preco_unitario, valor_total, canal_venda,
-  estado_cliente, …).
-* Calcula **três agregados** simultâneos no worker:
-    1. (produto, centro) → (valor_total, quantidade)              ‑ original
-    2. canal_venda        → valor_total
-    3. estado_cliente     → quantidade
-* Usa **HybridPool** do `miniframework` — nunca passa de 12 CPUs.
-* Métricas histogram/contador publicadas no relatório.
 """
 
 from __future__ import annotations
@@ -35,9 +25,9 @@ from metrics import METRICS
 from worker import process_chunk, merge_int, merge_num, merge_pair
 
 
-###############################################################################
-# MAIN PIPELINE ###############################################################
-###############################################################################
+
+# MAIN PIPELINE 
+
 
 
 def run_pipeline(
@@ -113,9 +103,9 @@ def run_pipeline(
     print("\n--- Métricas internas ---\n", METRICS.report())
     print("==============================")
 
-###############################################################################
-# CLI #########################################################################
-###############################################################################
+
+# CLI 
+
 
 
 def _parse() -> argparse.Namespace:

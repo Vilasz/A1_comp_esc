@@ -9,7 +9,7 @@ DEFAULT_DB = Path("ecommerce.db")
 SUMMARY_TABLE = "orders_summary"
 
 class DB:
-    """Wrapper minimalista em torno de `sqlite3.Connection`.  Usa transações."""
+    """Wrapper minimalista de `sqlite3.Connection`."""
 
     def __init__(self, db_path: str | Path):
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
@@ -35,7 +35,6 @@ class DB:
         with self._lock:
             self.conn.close()
 
-    # Para usar com `with DB(...) as db:` ---------------------------------
     def __enter__(self) -> "DB":
         return self
 

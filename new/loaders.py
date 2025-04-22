@@ -4,15 +4,14 @@ from pathlib import Path
 from typing import List, Tuple
 
 
-###############################################################################
-# CONSTANTES / CONFIG #########################################################
-###############################################################################
+
+# CONSTANTES / CONFIG 
+
 DEFAULT_CSV = Path("mock_data_db.csv")
 DEFAULT_JSON = Path("mock_data_pedidos_novos.json")
 
-###############################################################################
-# EXTRAÇÃO ####################################################################
-###############################################################################
+
+# EXTRAÇÃO 
 
 def load_csv(path: Path) -> List[Tuple[str, int, str, float, str, str]]:
     with path.open("r", encoding="utf-8") as f:
