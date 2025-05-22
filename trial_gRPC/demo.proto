@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+message DataMessage {
+  int32 id = 1;
+  string payload = 2;
+}
+
+message Ack {
+  string message = 1;
+}
+
+service GRPCDemo {
+  rpc StreamData (stream DataMessage) returns (stream Ack);
+}
+
