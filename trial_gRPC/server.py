@@ -19,19 +19,22 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
         print("StreamData started...")
 
         for data in request_iterator:
-            print(f"Received id={data.id:04d}, payload={data.payload}")
             # AQUI VAI PROCESSAR OS DADOS (ALOCAR PARA O PIPELINE)
             # cada instância de server pega dado de um cliente por vez, por isso é bom fazer com mais workers(threads)
             # se N clientes estão mandando mensagem sem parar e você tem menos de N workers alguns clientes vao ficar de fora
             # para solucionar da pra usar mais de um servidor ou aumentar o número de workers
-                  
+            # print(f"Received id={data.id:04d}, payload={data.payload}")
+            print(f"Received id={data.id:04d}, payload={data.payload}")
+            sorted_values = sorted(data.values)
+            print(f"Sorted values: {sorted_values}")
+    
             time.sleep(0.1)
 
         print("StreamData ended.")
         return demo_pb2.Ack(message="Stream completed.")
 
 def main():
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=5))
 
     demo_pb2_grpc.add_GRPCDemoServicer_to_server(DemoServer(), server)
 
@@ -39,8 +42,6 @@ def main():
     print("------------------start Python GRPC server")
     server.start()
     server.wait_for_termination()
-    time.sleep(30)
-    server.stop()
 
     # If raise Error:
     #   AttributeError: '_Server' object has no attribute 'wait_for_termination'
