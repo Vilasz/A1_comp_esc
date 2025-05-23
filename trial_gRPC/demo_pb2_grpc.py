@@ -34,7 +34,7 @@ class GRPCDemoStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.StreamData = channel.stream_stream(
+        self.StreamData = channel.stream_unary(
                 '/GRPCDemo/StreamData',
                 request_serializer=demo__pb2.DataMessage.SerializeToString,
                 response_deserializer=demo__pb2.Ack.FromString,
@@ -53,7 +53,7 @@ class GRPCDemoServicer(object):
 
 def add_GRPCDemoServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'StreamData': grpc.stream_stream_rpc_method_handler(
+            'StreamData': grpc.stream_unary_rpc_method_handler(
                     servicer.StreamData,
                     request_deserializer=demo__pb2.DataMessage.FromString,
                     response_serializer=demo__pb2.Ack.SerializeToString,
@@ -80,7 +80,7 @@ class GRPCDemo(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.stream_stream(
+        return grpc.experimental.stream_unary(
             request_iterator,
             target,
             '/GRPCDemo/StreamData',

@@ -100,21 +100,35 @@ def bidirectional_streaming_method(stub):
 
     print("--------------Call BidirectionalStreamingMethod Over---------------")
 
+# client stream to server 
 def stream_data_worker(client_id):
     with grpc.insecure_channel("localhost:23333") as channel:
         stub = demo_pb2_grpc.GRPCDemoStub(channel)
 
+        # # gererates simpler data for test
+        # def generate_data():
+        #     i = 0
+        #     print(f"[Client {client_id}] started sending data to server {channel}|{stub}.")
+        #     while True:
+        #         yield demo_pb2.DataMessage(id=client_id * 1000 + i, payload=f"Client {client_id}: Payload {i}")
+        #         print(f"[Client {client_id}] sent payload: {i}")
+        #         time.sleep(0.5)
+        #         i += 1
+        
         def generate_data():
+            import random
             i = 0
+            print(f"[Client {client_id}] started sending data to server {channel}|{stub}.")
             while True:
-                yield demo_pb2.DataMessage(id=client_id * 1000 + i, payload=f"Client {client_id}: Payload {i}")
-                time.sleep(1)
+                values = random.sample(range(500), 100)  # lista com 100 inteiros aleatórios
+                yield demo_pb2.DataMessage(id=client_id * 1000 + i, payload=f"Client {client_id}: Payload {i}", values=values)
+                print(f"[Client {client_id}] sent values: {values}")
+                time.sleep(0.5)
                 i += 1
 
         try:
             response = stub.StreamData(generate_data())
-            for res in response:
-                print(f"[Client {client_id}] Server response: {res.message}")
+            print(f"[Client {client_id}] Server response: {response}")
         except KeyboardInterrupt:
             print(f"[Client {client_id}] Interrupted.")
 
