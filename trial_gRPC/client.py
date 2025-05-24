@@ -118,12 +118,14 @@ def stream_data_worker(client_id):
         def generate_data():
             import random
             i = 0
-            print(f"[Client {client_id}] started sending data to server {channel}|{stub}.")
+            print(f"[Client {client_id}] started sending data to server.")
             while True:
-                values = random.sample(range(500), 100)  # lista com 100 inteiros aleatórios
+                print("================================================================")
+                values = [random.randint(0,600) for _ in range(10000)]  # lista com 1000 inteiros aleatórios
+                print(f"tentando enviar values: {values}")
                 yield demo_pb2.DataMessage(id=client_id * 1000 + i, payload=f"Client {client_id}: Payload {i}", values=values)
                 print(f"[Client {client_id}] sent values: {values}")
-                time.sleep(0.5)
+                time.sleep(2)
                 i += 1
 
         try:
