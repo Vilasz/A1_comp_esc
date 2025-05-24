@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ndemo.proto\":\n\x0b\x44\x61taMessage\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0f\n\x07payload\x18\x02 \x01(\t\x12\x0e\n\x06values\x18\x03 \x03(\x05\"\x16\n\x03\x41\x63k\x12\x0f\n\x07message\x18\x01 \x01(\t2.\n\x08GRPCDemo\x12\"\n\nStreamData\x12\x0c.DataMessage\x1a\x04.Ack(\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ndemo.proto\">\n\x0b\x44\x61taMessage\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0f\n\x07payload\x18\x02 \x01(\t\x12\x12\n\nvalue_list\x18\x03 \x03(\x05\"\x16\n\x03\x41\x63k\x12\x0f\n\x07message\x18\x01 \x01(\t2T\n\x08GRPCDemo\x12\"\n\nStreamData\x12\x0c.DataMessage\x1a\x04.Ack(\x01\x12$\n\x0eSimpleSendData\x12\x0c.DataMessage\x1a\x04.Ackb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,9 +32,9 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'demo_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_DATAMESSAGE']._serialized_start=14
-  _globals['_DATAMESSAGE']._serialized_end=72
-  _globals['_ACK']._serialized_start=74
-  _globals['_ACK']._serialized_end=96
-  _globals['_GRPCDEMO']._serialized_start=98
-  _globals['_GRPCDEMO']._serialized_end=144
+  _globals['_DATAMESSAGE']._serialized_end=76
+  _globals['_ACK']._serialized_start=78
+  _globals['_ACK']._serialized_end=100
+  _globals['_GRPCDEMO']._serialized_start=102
+  _globals['_GRPCDEMO']._serialized_end=186
 # @@protoc_insertion_point(module_scope)
