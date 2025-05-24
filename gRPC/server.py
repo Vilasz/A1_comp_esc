@@ -30,6 +30,36 @@ conn.commit()
 
 class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
 
+    def SimpleSendData(self, request, context):
+        print(f"Client {request.id} SimpleSendData started...")
+
+        # Cria nova conexão e cursor para esta thread
+        conn = sqlite3.connect("data_messages.db")
+        cursor = conn.cursor()
+
+        try:
+            print(f"Received id={request.id:04d}, payload={request.payload}")
+            sorted_values = sorted(request.value_list)
+            print(f"Sorted values: {sorted_values[:10]}...")
+
+            cursor.execute(
+                "INSERT INTO data_messages (client_id, payload, value_list) VALUES (?, ?, ?)",
+                (request.id, request.payload, json.dumps(list(request.value_list)))
+            )
+            conn.commit()
+
+        except Exception as e:
+            print(f"Exception in SimpleSendData: {e}")
+            context.set_details(str(e))
+            context.set_code(grpc.StatusCode.INTERNAL)
+            return demo_pb2.Ack(message="Erro")
+
+        finally:
+            conn.close()
+
+        print("SimpleSendData ended.")
+        return demo_pb2.Ack(message=f"Received data from client {request.id}.")
+    
     def StreamData(self, request_iterator, context):
         print("StreamData started...")
 
@@ -40,17 +70,12 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
         try:
             for data in request_iterator:
                 print(f"Received id={data.id:04d}, payload={data.payload}")
-                sorted_values = sorted(data.values)
+                sorted_values = sorted(data.value_list)
                 print(f"Sorted values: {sorted_values[:10]}...")
 
-                # Converte os valores e insere
-                # cursor.execute(
-                #     "INSERT INTO data_messages (id, client_id, payload, value_list) VALUES (?, ?, ?, ?)",
-                #     (data.id, data.id // 1000, data.payload, json.dumps(list(data.values)))
-                # )
                 cursor.execute(
                     "INSERT INTO data_messages (client_id, payload, value_list) VALUES (?, ?, ?)",
-                    (data.id // 1000, data.payload, json.dumps(list(data.values)))
+                    (data.id // 1000, data.payload, json.dumps(list(data.value_list)))
                 )
                 conn.commit()
 
@@ -63,8 +88,8 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
         finally:
             conn.close()
 
-        print("StreamData ended.")
-        return demo_pb2.Ack(message="Stream completed.")
+        print("StreamData from client ended.")
+        return demo_pb2.Ack(message=f"Stream from client completed.")
 
 def main():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=5))

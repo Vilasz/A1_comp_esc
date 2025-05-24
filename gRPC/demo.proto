@@ -3,7 +3,7 @@ syntax = "proto3";
 message DataMessage {
   int32 id = 1;
   string payload = 2;
-  repeated int32 values = 3;
+  repeated int32 value_list = 3;
 }
 
 message Ack {
@@ -12,5 +12,6 @@ message Ack {
 
 service GRPCDemo {
   rpc StreamData (stream DataMessage) returns (Ack);
+  rpc SimpleSendData (DataMessage) returns (Ack);
 }
 

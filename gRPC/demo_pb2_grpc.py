@@ -39,6 +39,11 @@ class GRPCDemoStub(object):
                 request_serializer=demo__pb2.DataMessage.SerializeToString,
                 response_deserializer=demo__pb2.Ack.FromString,
                 _registered_method=True)
+        self.SimpleSendData = channel.unary_unary(
+                '/GRPCDemo/SimpleSendData',
+                request_serializer=demo__pb2.DataMessage.SerializeToString,
+                response_deserializer=demo__pb2.Ack.FromString,
+                _registered_method=True)
 
 
 class GRPCDemoServicer(object):
@@ -50,11 +55,22 @@ class GRPCDemoServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SimpleSendData(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_GRPCDemoServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'StreamData': grpc.stream_unary_rpc_method_handler(
                     servicer.StreamData,
+                    request_deserializer=demo__pb2.DataMessage.FromString,
+                    response_serializer=demo__pb2.Ack.SerializeToString,
+            ),
+            'SimpleSendData': grpc.unary_unary_rpc_method_handler(
+                    servicer.SimpleSendData,
                     request_deserializer=demo__pb2.DataMessage.FromString,
                     response_serializer=demo__pb2.Ack.SerializeToString,
             ),
@@ -84,6 +100,33 @@ class GRPCDemo(object):
             request_iterator,
             target,
             '/GRPCDemo/StreamData',
+            demo__pb2.DataMessage.SerializeToString,
+            demo__pb2.Ack.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SimpleSendData(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/GRPCDemo/SimpleSendData',
             demo__pb2.DataMessage.SerializeToString,
             demo__pb2.Ack.FromString,
             options,
