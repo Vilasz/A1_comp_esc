@@ -19,7 +19,7 @@ message PedidoMessage {
   string cidade_cliente = 15;
   string estado_cliente = 16;
   int32 dias_para_entrega = 17;
-  string registrado_em = 18; // Timestamp como string
+  string timestamp_envio = 18; // Timestamp como string
 }
 
 // Mensagem correspondente a múltiplos datapoints

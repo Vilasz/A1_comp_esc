@@ -76,7 +76,8 @@ def generate_pedido_data(start_dt: datetime = None, end_dt: datetime = None) -> 
         "centro_logistico_mais_proximo": random.choice(CENTERS),
         "cidade_cliente": fk.city(),
         "estado_cliente": fk.estado_sigla(),
-        "dias_para_entrega": random.randint(1, 10)
+        "dias_para_entrega": random.randint(1, 10),
+        "timestamp_envio" : datetime.utcnow().isoformat()
     }
 
 
@@ -108,9 +109,10 @@ def send_data(client_id, n_msgs, server_adress=SERVER_ADDRESS):
                 centro_logistico_mais_proximo = pedido_data["centro_logistico_mais_proximo"],
                 cidade_cliente = pedido_data["cidade_cliente"],
                 estado_cliente=pedido_data["estado_cliente"],
-                dias_para_entrega=pedido_data["dias_para_entrega"]
+                dias_para_entrega=pedido_data["dias_para_entrega"],
+                timestamp_envio=pedido_data["timestamp_envio"]
             )
-
+            
             try:
                 response = stub.SimpleSendData(request)
                 print(f"[Client {client_id}] Pedido {client_id * 1000 + i:04d} enviado | Status: {response.message}")
@@ -150,7 +152,8 @@ def stream_data_worker(client_id, server_adress=SERVER_ADDRESS):
                         centro_logistico_mais_proximo = pedido_data["centro_logistico_mais_proximo"],
                         cidade_cliente = pedido_data["cidade_cliente"],
                         estado_cliente=pedido_data["estado_cliente"],
-                        dias_para_entrega=pedido_data["dias_para_entrega"]
+                        dias_para_entrega=pedido_data["dias_para_entrega"],
+                        timestamp_envio=pedido_data["timestamp_envio"]
                     )
 
                     print(f"[Client {client_id}] sent order {client_id * 1000 + i:04d}.")
@@ -173,6 +176,8 @@ def send_batch_data(client_id, size_batch, n_msgs, server_adress=SERVER_ADDRESS)
         stub = demo_pb2_grpc.GRPCDemoStub(channel)
 
         for i in range(n_msgs):
+            # if i==0:
+                
             print(f"[Client {client_id}] Enviando lote {i} de {size_batch} pedidos...")
             pedidos = []
             for _ in range(size_batch):
@@ -194,7 +199,8 @@ def send_batch_data(client_id, size_batch, n_msgs, server_adress=SERVER_ADDRESS)
                     centro_logistico_mais_proximo=pedido_data["centro_logistico_mais_proximo"],
                     cidade_cliente=pedido_data["cidade_cliente"],
                     estado_cliente=pedido_data["estado_cliente"],
-                    dias_para_entrega=pedido_data["dias_para_entrega"]
+                    dias_para_entrega=pedido_data["dias_para_entrega"],
+                    timestamp_envio=pedido_data["timestamp_envio"]
                 ))
 
             try:
@@ -236,11 +242,12 @@ def stream_batch_worker(client_id, size_batch, server_adress=SERVER_ADDRESS):
                             centro_logistico_mais_proximo=pedido_data["centro_logistico_mais_proximo"],
                             cidade_cliente=pedido_data["cidade_cliente"],
                             estado_cliente=pedido_data["estado_cliente"],
-                            dias_para_entrega=pedido_data["dias_para_entrega"]
+                            dias_para_entrega=pedido_data["dias_para_entrega"],
+                            timestamp_envio=pedido_data["timestamp_envio"]
                         ))
 
 
-                    yield demo_pb2.ListaPedidos(id= i, id_client=client_id,pedidos=pedidos)
+                    yield demo_pb2.ListaPedidos(id= i, id_client=client_id, pedidos=pedidos)
 
                     print(f"[Client {client_id}] sent batch {i}.")
                     time.sleep(2)
@@ -323,5 +330,5 @@ def test_streambatch_client(n_clients, size_batch):
 if __name__ == "__main__":
     # test_streaming_client(5)
     # test_simplesend_client(6, 5)
-    # test_sendbatch_client(5,10,5)
-    test_streambatch_client(3, 10)
+    test_sendbatch_client(5,10,5)
+    # test_streambatch_client(3, 10)

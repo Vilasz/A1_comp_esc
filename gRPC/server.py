@@ -36,7 +36,7 @@ cursor.execute('''
         cidade_cliente TEXT,
         estado_cliente TEXT,
         dias_para_entrega INTEGER,
-        registrado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        registrado_em TEXT
     )
 ''')
 conn.commit()
@@ -83,7 +83,8 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
                     request.centro_logistico_mais_proximo,
                     request.cidade_cliente,
                     request.estado_cliente,
-                    request.dias_para_entrega
+                    request.dias_para_entrega,
+                    request.timestamp_envio
                 )
             )
             conn.commit()
@@ -155,7 +156,8 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
                         data.centro_logistico_mais_proximo,
                         data.cidade_cliente,
                         data.estado_cliente,
-                        data.dias_para_entrega
+                        data.dias_para_entrega,
+                        data.timestamp_envio
                     )
                 )
                 conn.commit()
@@ -221,7 +223,8 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
                             pedido.centro_logistico_mais_proximo,
                             pedido.cidade_cliente,
                             pedido.estado_cliente,
-                            pedido.dias_para_entrega
+                            pedido.dias_para_entrega,
+                            pedido.timestamp_envio
                         )
                     )
                 conn.commit()
@@ -254,8 +257,8 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
                         quantidade, preco_unitario, valor_total, data_pedido,
                         hora_pedido, mes, ano, canal_venda, 
                         centro_logistico_mais_proximo, cidade_cliente,
-                        estado_cliente, dias_para_entrega
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        estado_cliente, dias_para_entrega, registrado_em
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         pedido.cliente_id,
@@ -273,7 +276,8 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
                         pedido.centro_logistico_mais_proximo,
                         pedido.cidade_cliente,
                         pedido.estado_cliente,
-                        pedido.dias_para_entrega
+                        pedido.dias_para_entrega,
+                        pedido.timestamp_envio
                     )
                 )
             conn.commit()
@@ -286,6 +290,8 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
 
         finally:
             conn.close()
+
+
 
 def main(n_workers):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=n_workers))
@@ -306,4 +312,4 @@ def main(n_workers):
 
 
 if __name__ == "__main__":
-    main(5)
+    main(4)
