@@ -24,7 +24,9 @@ message PedidoMessage {
 
 // Mensagem correspondente a múltiplos datapoints
 message ListaPedidos {
-  repeated PedidoMessage pedidos = 1;
+  int32 id = 1;
+  int32 id_client = 2;
+  repeated PedidoMessage pedidos = 3;
 }
 
 message Ack {
@@ -34,5 +36,7 @@ message Ack {
 service GRPCDemo {
   rpc StreamData (stream PedidoMessage) returns (Ack);
   rpc SimpleSendData (PedidoMessage) returns (Ack);
+  rpc EnviarPedidosEmLote (ListaPedidos) returns (Ack);
+  rpc StreamPedidosEmLote (stream ListaPedidos) returns (Ack);
 }
 

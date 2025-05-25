@@ -126,7 +126,6 @@ def stream_data_worker(client_id, server_adress=SERVER_ADDRESS):
         stub = demo_pb2_grpc.GRPCDemoStub(channel)
         
         def stream_data(client_id):
-            import random
             i = 0
             print(f"[Client {client_id}] started sending data to server.")
             try:
@@ -154,7 +153,7 @@ def stream_data_worker(client_id, server_adress=SERVER_ADDRESS):
                         dias_para_entrega=pedido_data["dias_para_entrega"]
                     )
 
-                    print(f"[Client {client_id}] sent datapoint.")
+                    print(f"[Client {client_id}] sent order {client_id * 1000 + i:04d}.")
                     time.sleep(2)
                     i += 1
                     
@@ -167,11 +166,99 @@ def stream_data_worker(client_id, server_adress=SERVER_ADDRESS):
         except KeyboardInterrupt:
             print(f"[Client {client_id}] Interrupted.")
 
+
+def send_batch_data(client_id, size_batch, n_msgs, server_adress=SERVER_ADDRESS):
+
+    with grpc.insecure_channel(server_adress) as channel:
+        stub = demo_pb2_grpc.GRPCDemoStub(channel)
+
+        for i in range(n_msgs):
+            print(f"[Client {client_id}] Enviando lote {i} de {size_batch} pedidos...")
+            pedidos = []
+            for _ in range(size_batch):
+                pedido_data = generate_pedido_data()
+                pedidos.append(demo_pb2.PedidoMessage(
+                    id=client_id * 1000 + i,
+                    cliente_id=pedido_data["cliente_id"],
+                    produto_id=pedido_data["produto_id"],
+                    categoria_id=pedido_data["categoria_id"],
+                    produto=pedido_data["produto"],
+                    quantidade=pedido_data["quantidade"],
+                    preco_unitario=pedido_data["preco_unitario"],
+                    valor_total=pedido_data["valor_total"],
+                    data_pedido=pedido_data["data_pedido"],
+                    hora_pedido=pedido_data["hora_pedido"],
+                    mes=pedido_data["mes"],
+                    ano=pedido_data["ano"],
+                    canal_venda=pedido_data["canal_venda"],
+                    centro_logistico_mais_proximo=pedido_data["centro_logistico_mais_proximo"],
+                    cidade_cliente=pedido_data["cidade_cliente"],
+                    estado_cliente=pedido_data["estado_cliente"],
+                    dias_para_entrega=pedido_data["dias_para_entrega"]
+                ))
+
+            try:
+                lista = demo_pb2.ListaPedidos(id=client_id, id_client=i,pedidos=pedidos)
+                response = stub.EnviarPedidosEmLote(lista)
+                print(f"[Client {client_id}] Resposta lote {i} do servidor: {response.message}")
+            except Exception as e:
+                print(f"[Client {client_id}] Erro ao enviar lote {i}: {str(e)}")
+
+# client stream to server 
+def stream_batch_worker(client_id, size_batch, server_adress=SERVER_ADDRESS):
+    with grpc.insecure_channel(server_adress) as channel:
+        stub = demo_pb2_grpc.GRPCDemoStub(channel)
+        
+        def stream_data(client_id):
+            i = 0
+            print(f"[Client {client_id}] started sending data to server.")
+            try:
+                while True:
+                # for _ in range(1):
+                    print(f"[Client {client_id}] Enviando lote {i} de {size_batch} pedidos...")
+                    pedidos = []
+                    for _ in range(size_batch):
+                        pedido_data = generate_pedido_data()
+                        pedidos.append(demo_pb2.PedidoMessage(
+                            id=client_id * 1000 + i,
+                            cliente_id=pedido_data["cliente_id"],
+                            produto_id=pedido_data["produto_id"],
+                            categoria_id=pedido_data["categoria_id"],
+                            produto=pedido_data["produto"],
+                            quantidade=pedido_data["quantidade"],
+                            preco_unitario=pedido_data["preco_unitario"],
+                            valor_total=pedido_data["valor_total"],
+                            data_pedido=pedido_data["data_pedido"],
+                            hora_pedido=pedido_data["hora_pedido"],
+                            mes=pedido_data["mes"],
+                            ano=pedido_data["ano"],
+                            canal_venda=pedido_data["canal_venda"],
+                            centro_logistico_mais_proximo=pedido_data["centro_logistico_mais_proximo"],
+                            cidade_cliente=pedido_data["cidade_cliente"],
+                            estado_cliente=pedido_data["estado_cliente"],
+                            dias_para_entrega=pedido_data["dias_para_entrega"]
+                        ))
+
+
+                    yield demo_pb2.ListaPedidos(id= i, id_client=client_id,pedidos=pedidos)
+
+                    print(f"[Client {client_id}] sent batch {i}.")
+                    time.sleep(2)
+                    i += 1
+                    
+            except Exception as e:
+                print(f"[Client {client_id}] Exception in generate_data(): {e}")
+
+        try:
+            response = stub.StreamPedidosEmLote(stream_data(client_id))
+            print(f"[Client {client_id}] Server response: {response}")
+        except KeyboardInterrupt:
+            print(f"[Client {client_id}] Interrupted.")
+
 def test_streaming_client(n_clients):
-    client_count = n_clients
     processes = []
 
-    for i in range(client_count):
+    for i in range(n_clients):
         p = Process(target=stream_data_worker, args=(i,))
         p.start()
         processes.append(p)
@@ -185,12 +272,42 @@ def test_streaming_client(n_clients):
             p.terminate()
 
 def test_simplesend_client(n_clients, n_msgs):
-    client_count = n_clients
-    n_msgs = n_msgs
     processes = []
 
-    for i in range(client_count):
+    for i in range(n_clients):
         p = Process(target=send_data, args=(i,n_msgs))
+        p.start()
+        processes.append(p)
+
+    try:
+        for p in processes:
+            p.join()
+    except KeyboardInterrupt:
+        print("Main process interrupted. Terminating clients...")
+        for p in processes:
+            p.terminate()
+
+def test_sendbatch_client(n_clients, size_batch, n_msgs):
+    processes = []
+
+    for i in range(n_clients):
+        p = Process(target=send_batch_data, args=(i,size_batch, n_msgs))
+        p.start()
+        processes.append(p)
+
+    try:
+        for p in processes:
+            p.join()
+    except KeyboardInterrupt:
+        print("Main process interrupted. Terminating clients...")
+        for p in processes:
+            p.terminate()
+
+def test_streambatch_client(n_clients, size_batch):
+    processes = []
+
+    for i in range(n_clients):
+        p = Process(target=stream_batch_worker, args=(i,size_batch))
         p.start()
         processes.append(p)
 
@@ -205,4 +322,6 @@ def test_simplesend_client(n_clients, n_msgs):
 
 if __name__ == "__main__":
     # test_streaming_client(5)
-    test_simplesend_client(6, 5)
+    # test_simplesend_client(6, 5)
+    # test_sendbatch_client(5,10,5)
+    test_streambatch_client(3, 10)

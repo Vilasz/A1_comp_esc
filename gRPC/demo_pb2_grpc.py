@@ -44,6 +44,16 @@ class GRPCDemoStub(object):
                 request_serializer=demo__pb2.PedidoMessage.SerializeToString,
                 response_deserializer=demo__pb2.Ack.FromString,
                 _registered_method=True)
+        self.EnviarPedidosEmLote = channel.unary_unary(
+                '/GRPCDemo/EnviarPedidosEmLote',
+                request_serializer=demo__pb2.ListaPedidos.SerializeToString,
+                response_deserializer=demo__pb2.Ack.FromString,
+                _registered_method=True)
+        self.StreamPedidosEmLote = channel.stream_unary(
+                '/GRPCDemo/StreamPedidosEmLote',
+                request_serializer=demo__pb2.ListaPedidos.SerializeToString,
+                response_deserializer=demo__pb2.Ack.FromString,
+                _registered_method=True)
 
 
 class GRPCDemoServicer(object):
@@ -61,6 +71,18 @@ class GRPCDemoServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def EnviarPedidosEmLote(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StreamPedidosEmLote(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_GRPCDemoServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -72,6 +94,16 @@ def add_GRPCDemoServicer_to_server(servicer, server):
             'SimpleSendData': grpc.unary_unary_rpc_method_handler(
                     servicer.SimpleSendData,
                     request_deserializer=demo__pb2.PedidoMessage.FromString,
+                    response_serializer=demo__pb2.Ack.SerializeToString,
+            ),
+            'EnviarPedidosEmLote': grpc.unary_unary_rpc_method_handler(
+                    servicer.EnviarPedidosEmLote,
+                    request_deserializer=demo__pb2.ListaPedidos.FromString,
+                    response_serializer=demo__pb2.Ack.SerializeToString,
+            ),
+            'StreamPedidosEmLote': grpc.stream_unary_rpc_method_handler(
+                    servicer.StreamPedidosEmLote,
+                    request_deserializer=demo__pb2.ListaPedidos.FromString,
                     response_serializer=demo__pb2.Ack.SerializeToString,
             ),
     }
@@ -128,6 +160,60 @@ class GRPCDemo(object):
             target,
             '/GRPCDemo/SimpleSendData',
             demo__pb2.PedidoMessage.SerializeToString,
+            demo__pb2.Ack.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EnviarPedidosEmLote(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/GRPCDemo/EnviarPedidosEmLote',
+            demo__pb2.ListaPedidos.SerializeToString,
+            demo__pb2.Ack.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StreamPedidosEmLote(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_unary(
+            request_iterator,
+            target,
+            '/GRPCDemo/StreamPedidosEmLote',
+            demo__pb2.ListaPedidos.SerializeToString,
             demo__pb2.Ack.FromString,
             options,
             channel_credentials,
