@@ -1,9 +1,32 @@
 syntax = "proto3";
 
-message DataMessage {
+// Mensagem correspondente a um datapoint
+message PedidoMessage {
   int32 id = 1;
-  string payload = 2;
-  repeated int32 value_list = 3;
+  int32 cliente_id = 2;
+  int32 produto_id = 3;
+  int32 categoria_id = 4;
+  string produto = 5;
+  int32 quantidade = 6;
+  float preco_unitario = 7;
+  float valor_total = 8;
+  string data_pedido = 9;  // Usando string para datas
+  string hora_pedido = 10; // Usando string para horas
+  int32 mes = 11;
+  int32 ano = 12;
+  string canal_venda = 13;
+  string centro_logistico_mais_proximo = 14;
+  string cidade_cliente = 15;
+  string estado_cliente = 16;
+  int32 dias_para_entrega = 17;
+  string registrado_em = 18; // Timestamp como string
+}
+
+// Mensagem correspondente a múltiplos datapoints
+message ListaPedidos {
+  int32 id = 1;
+  int32 id_client = 2;
+  repeated PedidoMessage pedidos = 3;
 }
 
 message Ack {
@@ -11,7 +34,8 @@ message Ack {
 }
 
 service GRPCDemo {
-  rpc StreamData (stream DataMessage) returns (Ack);
-  rpc SimpleSendData (DataMessage) returns (Ack);
+  rpc StreamData (stream PedidoMessage) returns (Ack);
+  rpc SimpleSendData (PedidoMessage) returns (Ack);
+  rpc EnviarPedidosEmLote (ListaPedidos) returns (Ack);
+  rpc StreamPedidosEmLote (stream ListaPedidos) returns (Ack);
 }
-
