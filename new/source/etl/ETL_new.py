@@ -576,7 +576,7 @@ def run_generic_etl_pipeline(
     transform_function: Optional[Callable[[DataFrame, Any], DataFrame]] = None,
     transform_params: Optional[Dict[str, Any]] = None,
     # DB config for loader
-    db_target: Union[str, Path, sqlite3.Connection] = PATH_CONFIG["DEFAULT_OUTPUT_DB_PATH"],
+    db_target: Union[str, Path, sqlite3.Connection] = PATH_CONFIG.get("DEFAULT_SQLITE_OUTPUT_DB_PATH", _PROJECT_ROOT / "output_data" / "etl_sqlite_output.db"),
     db_table_prefix: str = "output_",
     db_if_exists: str = "append",
     # Concurrency config
@@ -855,7 +855,7 @@ if __name__ == "__main__":
         tasks=example_tasks,
         transform_function=example_transform_function, # Pass the function itself
         transform_params={"extra_param": "ETL_RUN"},   # Pass any params for the function
-        db_target=PATH_CONFIG["DEFAULT_OUTPUT_DB_PATH"], # Output DB
+        db_target=PATH_CONFIG.get("DEFAULT_SQLITE_OUTPUT_DB_PATH", _PROJECT_ROOT / "output_data" / "etl_sqlite_output.db"), # Output DB
         db_table_prefix="etl_",      # Tables will be like "etl_products", "etl_cade_data"
         db_if_exists="replace",      # "replace", "append", or "fail"
         num_workers_hybrid_pool=max(1, (os.cpu_count() or 2) // 2), # Use half the cores for the pool for this example
