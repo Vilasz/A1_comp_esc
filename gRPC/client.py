@@ -9,21 +9,13 @@ import demo_pb2_grpc
 
 from multiprocessing import Process
 
-__all__ = [
-    "simple_method",
-    "client_streaming_method",
-    "server_streaming_method",
-    "bidirectional_streaming_method",
-    "stream_data_method"
-]
-
 SERVER_ADDRESS = "localhost:23333"
 CLIENT_ID = 1
 
 # unary-unary(In a single call, the client can only send request once, and the server can
 # only respond once.)
 def send_data(client_id, n_msgs):
-    print("--------------Call SimpleSend Begin--------------")
+    print(f"[Client {client_id}]--------------Call SimpleSend Begin--------------")
     import random
     with grpc.insecure_channel("localhost:23333") as channel:
         stub = demo_pb2_grpc.GRPCDemoStub(channel)
@@ -33,13 +25,13 @@ def send_data(client_id, n_msgs):
                 id=client_id * 1000 + i,
                 payload=f"Client {client_id}: Payload {i}",
                 value_list = [random.randint(0,500) for _ in range(1000)])
-            
             try:
                 response = stub.SimpleSendData(request)
                 print(f"[Client {client_id}] Server response over message {i}: {response}")
             except KeyboardInterrupt:
                 print(f"[Client {client_id}] Interrupted.")
-        print("--------------Call SimpleSend Over---------------")
+            
+    print(f"[Client {client_id}]--------------Call SimpleSend Over---------------")
 
 # client stream to server 
 def stream_data_worker(client_id):
@@ -111,4 +103,4 @@ def test_simplesend_client(n_clients, n_msgs):
 
 if __name__ == "__main__":
     # test_streaming_client(5)
-    test_simplesend_client(5, 5)
+    test_simplesend_client(8, 5)

@@ -31,7 +31,7 @@ conn.commit()
 class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
 
     def SimpleSendData(self, request, context):
-        print(f"Client {request.id} SimpleSendData started...")
+        print(f"Client {request.id:04d} SimpleSendData started...")
 
         # Cria nova conexão e cursor para esta thread
         conn = sqlite3.connect("data_messages.db")
@@ -44,7 +44,7 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
 
             cursor.execute(
                 "INSERT INTO data_messages (client_id, payload, value_list) VALUES (?, ?, ?)",
-                (request.id, request.payload, json.dumps(list(request.value_list)))
+                (request.id//1000, request.payload, json.dumps(list(request.value_list)))
             )
             conn.commit()
 
@@ -57,8 +57,8 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
         finally:
             conn.close()
 
-        print("SimpleSendData ended.")
-        return demo_pb2.Ack(message=f"Received data from client {request.id}.")
+        print(f"{request.id:04} SimpleSendData dended.")
+        return demo_pb2.Ack(message=f"Received data from client {request.id:04d}.")
     
     def StreamData(self, request_iterator, context):
         print("StreamData started...")
@@ -91,13 +91,13 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
         print("StreamData from client ended.")
         return demo_pb2.Ack(message=f"Stream from client completed.")
 
-def main():
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=5))
+def main(n_workers):
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=n_workers))
 
     demo_pb2_grpc.add_GRPCDemoServicer_to_server(DemoServer(), server)
 
     server.add_insecure_port(SERVER_ADDRESS)
-    print("------------------start Python GRPC server")
+    print(f"------------------start Python GRPC server w/ {n_workers} workers")
     server.start()
     server.wait_for_termination()
 
@@ -110,4 +110,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(4)
