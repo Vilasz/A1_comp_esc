@@ -11,6 +11,29 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from concurrent.futures import as_completed, Future
 import argparse
 
+import math # Para math.ceil ao dividir em chunks
+import threading # Para o lock de IDs
+
+# >>> MANTENHA O NOME CORRETO DO SEU ARQUIVO DE LÓGICA DE PEDIDOS <<<
+try:
+    from new.source.etl.orders_ingest import (
+        transform_new_orders_worker,
+        update_stock_worker,
+        get_db_connection, # get_last_pk é usado internamente por OrderProcessingStage
+        get_last_pk
+    )
+    ORDERS_LOGIC_AVAILABLE = True
+except ImportError as e:
+    logging.error(f"Falha ao importar de 'orders_processing_logic.py': {e}. A funcionalidade de pedidos não estará disponível.")
+    ORDERS_LOGIC_AVAILABLE = False
+    # Placeholders para evitar erros de NameError se a importação falhar
+    def transform_new_orders_worker(*_args, **_kwargs): raise NotImplementedError("orders_processing_logic.py não encontrado")
+    def update_stock_worker(*_args, **_kwargs): raise NotImplementedError("orders_processing_logic.py não encontrado")
+    def get_db_connection(*_args, **_kwargs): raise NotImplementedError("orders_processing_logic.py não encontrado")
+    def get_last_pk(*_args, **_kwargs): raise NotImplementedError("orders_processing_logic.py não encontrado")
+
+
+
 from new.source.etl.data_generators import generate_csv as etl_generate_csv
 from new.source.etl.data_generators import generate_json as etl_generate_json # Assuming these are in new.etl.data_generators
 
@@ -35,10 +58,16 @@ LOG_FORMAT = "%(asctime)s [%(levelname)8s] [%(threadName)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
+
 # --- Type Definitions for Queue Items ---
 # Task for Extractor: (unique_task_id, {kind: 'csv', path: '...', 'csv_delimiter': ','})
 ExtractionTaskPayload = Dict[str, Any]
 ExtractionTaskItem = Tuple[str, ExtractionTaskPayload]
+
+# Define type for order processing stage input: (task_id, df_raw_orders, task_payload)
+ExtractedDataQueueItem = Tuple[str, DataFrame, ExtractionTaskPayload]
+# Define type for order processing stage output: (task_id, {'pedidos': DataFrame, 'itens': DataFrame}, task_payload)
+ProcessedDataQueueItem = Tuple[str, Dict[str, DataFrame], ExtractionTaskPayload]
 
 # Item for Transformer/Loader: (unique_task_id_or_source_key, DataFrame)
 DataFrameQueueItem = Tuple[str, DataFrame]
@@ -481,6 +510,143 @@ class TransformStage(ThreadWrapper[str, DataFrame]): # Input: (task_id, DataFram
         except Exception as e:
             logger.error("Transformer: Error during transformation for task '%s': %s", task_id, e, exc_info=True)
             return None # Or task_id, df_input to pass original on error
+        
+class OrderProcessingStage(ThreadWrapper[str, Union[DataFrame, Dict[str, DataFrame]]]): # O tipo de input depende de onde ela pega os dados
+    def __init__(
+        self,
+        in_queue: queue.Queue[ExtractedDataQueueItem], # Recebe (task_id, df_raw_orders, task_payload)
+        out_queue: queue.Queue[ProcessedDataQueueItem], # Envia (task_id, {'pedidos': df, 'itens': df}, task_payload)
+        hybrid_pool: HybridPool,
+        ecommerce_db_path: Path,
+        default_chunk_size_rows: int = 10000, # Chunk para processamento paralelo de pedidos
+        name: str = "OrderProcessingStage",
+    ):
+        super().__init__(in_queue, out_queue, name=name)
+        self.hybrid_pool = hybrid_pool
+        self.ecommerce_db_path = ecommerce_db_path
+        self.default_chunk_size_rows = default_chunk_size_rows
+        self._id_lock = threading.Lock() # Lock para proteger get_last_pk globalmente
+        self._ecommerce_conn_for_ids: Optional[sqlite3.Connection] = None # Conexão reutilizável para IDs
+
+        if not ORDERS_LOGIC_AVAILABLE:
+            logger.error(f"{self.name} instanciada, mas a lógica de processamento de pedidos não está disponível devido a erro de importação.")
+
+
+    def _get_reusable_ecommerce_connection(self) -> sqlite3.Connection:
+        # Reutiliza conexão para buscar IDs para evitar abrir/fechar muitas conexões
+        # ATENÇÃO: Esta conexão NÃO deve ser passada para os workers do HybridPool se eles forem processos.
+        # Cada worker (processo) deve abrir sua própria conexão.
+        # Se os workers forem threads, esta conexão pode ser usada COM CUIDADO (SQLite e threads).
+        # Para `get_last_pk` executado serialmente sob lock, está OK.
+        if self._ecommerce_conn_for_ids is None or self._is_connection_closed(self._ecommerce_conn_for_ids):
+            try:
+                self._ecommerce_conn_for_ids = get_db_connection(self.ecommerce_db_path)
+            except Exception as e:
+                logger.error(f"{self.name}: Falha ao obter conexão com DB de e-commerce para IDs: {e}")
+                raise
+        return self._ecommerce_conn_for_ids
+
+    def _is_connection_closed(self, conn: sqlite3.Connection) -> bool:
+        try:
+            # Tenta uma operação simples para verificar se a conexão está ativa
+            conn.execute("SELECT 1").fetchone()
+            return False
+        except sqlite3.ProgrammingError: # Connection closed or cursor used on closed connection
+            return True
+        except Exception: # Outros erros potenciais
+            return True
+
+
+    def handle_item(self, task_id: str, df_raw_orders: DataFrame, task_payload: ExtractionTaskPayload) -> Optional[ProcessedDataQueueItem]:
+        if not ORDERS_LOGIC_AVAILABLE:
+            logger.error(f"{self.name}: Lógica de pedidos indisponível, pulando tarefa '{task_id}'.")
+            # Passar um item de erro ou DataFrame vazio para a próxima stage
+            return task_id, DataFrame(columns=["error"]), task_payload
+
+
+        # Esta stage só processa tarefas marcadas para processamento de pedidos
+        if task_payload.get("processing_type") != "ecommerce_new_orders":
+            # Se esta stage receber algo que não é para ela, logar e descartar, ou rotear para outra fila (mais complexo)
+            logger.debug(f"{self.name}: Tarefa '{task_id}' não é do tipo 'ecommerce_new_orders'. Pulando.")
+            return None # Não envia nada para a out_queue desta stage
+
+        if df_raw_orders.empty:
+            logger.info(f"{self.name}: DataFrame de pedidos brutos para '{task_id}' está vazio.")
+            # Enviar DataFrames vazios para 'pedidos' e 'itens'
+            empty_result = {'pedidos': DataFrame(), 'itens': DataFrame()}
+            return task_id, empty_result, task_payload
+
+        logger.info(f"{self.name}: Iniciando processamento de {df_raw_orders.shape[0]} pedidos brutos para '{task_id}'.")
+
+        conn_for_ids = None
+        try:
+            # Obter IDs iniciais globais sob lock
+            with self._id_lock:
+                conn_for_ids = self._get_reusable_ecommerce_connection()
+                start_overall_pedido_id = get_last_pk(conn_for_ids, "pedidos") + 1
+                start_overall_item_id = get_last_pk(conn_for_ids, "itens_pedido") + 1
+                logger.info(f"{self.name}: IDs iniciais globais para '{task_id}': Pedido={start_overall_pedido_id}, Item={start_overall_item_id}")
+
+            num_chunks = math.ceil(df_raw_orders.shape[0] / self.default_chunk_size_rows)
+            futures: List[Future] = []
+            current_pedido_id_offset = 0
+            current_item_id_offset = 0 # Assumindo 1 item por pedido bruto para cálculo de offset de ID de item
+
+            for i in range(num_chunks):
+                chunk_df = df_raw_orders.slice(i * self.default_chunk_size_rows, (i + 1) * self.default_chunk_size_rows)
+                if chunk_df.empty:
+                    continue
+
+                # IDs para este chunk específico
+                chunk_start_pedido_id = start_overall_pedido_id + current_pedido_id_offset
+                # Assumimos que transform_new_orders_worker gera 1 item_pedido por linha do chunk_df
+                chunk_start_item_id = start_overall_item_id + current_item_id_offset
+
+                logger.debug(f"{self.name}: Submetendo chunk {i+1}/{num_chunks} (linhas: {chunk_df.shape[0]}) para '{task_id}' com IDs Pedido={chunk_start_pedido_id}, Item={chunk_start_item_id}")
+
+                # transform_new_orders_worker precisa de db_path, não de uma conexão,
+                # pois ele mesmo abre/fecha conexões se for executado em outro processo.
+                future = self.hybrid_pool.submit(
+                    transform_new_orders_worker,
+                    chunk_df,
+                    self.ecommerce_db_path, # Worker abre sua própria conexão
+                    chunk_start_pedido_id,
+                    chunk_start_item_id
+                )
+                futures.append(future)
+
+                current_pedido_id_offset += chunk_df.shape[0] # Avança o offset pelo número de pedidos no chunk
+                current_item_id_offset += chunk_df.shape[0] # Assumindo 1 item por pedido
+
+            all_pedidos_dfs: List[DataFrame] = []
+            all_itens_dfs: List[DataFrame] = []
+            for future in as_completed(futures):
+                try:
+                    df_p, df_i = future.result()
+                    if df_p is not None and not df_p.empty:
+                        all_pedidos_dfs.append(df_p)
+                    if df_i is not None and not df_i.empty:
+                        all_itens_dfs.append(df_i)
+                except Exception as e:
+                    logger.error(f"{self.name}: Erro em um worker de transformação de pedidos para '{task_id}': {e}", exc_info=True)
+
+            if not all_pedidos_dfs: # Se nenhum pedido foi processado com sucesso
+                logger.warning(f"{self.name}: Nenhum DataFrame de pedido válido retornado pelos workers para '{task_id}'.")
+                final_pedidos_df = DataFrame() # Schema pode ser adicionado se conhecido
+                final_itens_df = DataFrame()
+            else:
+                final_pedidos_df = DataFrame.concat_dfs(all_pedidos_dfs) if len(all_pedidos_dfs) > 1 else all_pedidos_dfs[0]
+                final_itens_df = DataFrame.concat_dfs(all_itens_dfs) if len(all_itens_dfs) > 1 and all_itens_dfs else \
+                                 (all_itens_dfs[0] if all_itens_dfs else DataFrame())
+
+
+            logger.info(f"{self.name}: Processamento de pedidos para '{task_id}' concluído. Pedidos gerados: {final_pedidos_df.shape}, Itens gerados: {final_itens_df.shape}")
+            return task_id, {'pedidos': final_pedidos_df, 'itens': final_itens_df}, task_payload
+
+        except Exception as e:
+            logger.error(f"{self.name}: Erro crítico no processamento de pedidos para '{task_id}': {e}", exc_info=True)
+            # Enviar DataFrames vazios em caso de erro crítico na stage
+            return task_id, {'pedidos': DataFrame(), 'itens': DataFrame()}, task_payload
 
 class LoadStage(ThreadWrapper[str, DataFrame]): # Input: (task_id, DataFrame)
     def __init__(
@@ -530,6 +696,7 @@ class LoadStage(ThreadWrapper[str, DataFrame]): # Input: (task_id, DataFrame)
         return None # No output item for the next stage
 
 
+
 def setup_etl_benchmark_data(sim_root: Path, regenerate: bool = False):
     logger.info(f"Setting up benchmark data in {sim_root}")
     sim_root.mkdir(parents=True, exist_ok=True)
@@ -544,13 +711,13 @@ def setup_etl_benchmark_data(sim_root: Path, regenerate: bool = False):
         # generate_csv creates many columns, ensure your 'products' task can handle it
         # or simplify the generate_csv call if 'products' expects a simpler schema.
         # For this example, let's assume the 'products' task is flexible or you adapt it.
-        etl_generate_csv(n_rows=100000, out_path=etl_csv_path) # Adjust n_rows
+        etl_generate_csv(n_rows=1000000, out_path=etl_csv_path) # Adjust n_rows
 
     # JSON example (e.g., for 'new_orders' task)
     etl_json_path = sim_root / "orders_benchmark.json"
     if regenerate or not etl_json_path.exists():
         logger.info(f"Generating JSON for ETL benchmark: {etl_json_path}")
-        etl_generate_json(n_rows=50000, out_path=etl_json_path) # Adjust n_rows
+        etl_generate_json(n_rows=500000, out_path=etl_json_path) # Adjust n_rows
         
     # TXT example (e.g., for 'cade_data' task)
     etl_txt_path = sim_root / "cadeanalytics" / "cade_benchmark.txt"
@@ -558,7 +725,7 @@ def setup_etl_benchmark_data(sim_root: Path, regenerate: bool = False):
     if regenerate or not etl_txt_path.exists():
         logger.info(f"Generating TXT (as CSV) for ETL benchmark: {etl_txt_path}")
         # Using generate_csv for TXT with a specific delimiter
-        etl_generate_csv(n_rows=30000, out_path=etl_txt_path) # Will be comma-delimited
+        etl_generate_csv(n_rows=300000, out_path=etl_txt_path) # Will be comma-delimited
 
     # DataCat example (if you want to benchmark it)
     datacat_dir = sim_root / "datacat_benchmark" / "behaviour"
@@ -566,7 +733,7 @@ def setup_etl_benchmark_data(sim_root: Path, regenerate: bool = False):
     if regenerate or not list(datacat_dir.glob("*.txt")):
         logger.info(f"Generating DataCat files for ETL benchmark in {datacat_dir}")
         for i in range(5): # Generate a few files
-            etl_generate_csv(n_rows=10000, out_path=datacat_dir / f"events_log_bench_{i}.txt")
+            etl_generate_csv(n_rows=100000, out_path=datacat_dir / f"events_log_bench_{i}.txt")
 
 
 # --- Main ETL Orchestration ---
@@ -576,7 +743,7 @@ def run_generic_etl_pipeline(
     transform_function: Optional[Callable[[DataFrame, Any], DataFrame]] = None,
     transform_params: Optional[Dict[str, Any]] = None,
     # DB config for loader
-    db_target: Union[str, Path, sqlite3.Connection] = PATH_CONFIG.get("DEFAULT_SQLITE_OUTPUT_DB_PATH", _PROJECT_ROOT / "output_data" / "etl_sqlite_output.db"),
+    db_target: Union[str, Path, sqlite3.Connection] = PATH_CONFIG["DEFAULT_OUTPUT_DB_PATH"],
     db_table_prefix: str = "output_",
     db_if_exists: str = "append",
     # Concurrency config
@@ -855,7 +1022,7 @@ if __name__ == "__main__":
         tasks=example_tasks,
         transform_function=example_transform_function, # Pass the function itself
         transform_params={"extra_param": "ETL_RUN"},   # Pass any params for the function
-        db_target=PATH_CONFIG.get("DEFAULT_SQLITE_OUTPUT_DB_PATH", _PROJECT_ROOT / "output_data" / "etl_sqlite_output.db"), # Output DB
+        db_target=PATH_CONFIG["DEFAULT_OUTPUT_DB_PATH"], # Output DB
         db_table_prefix="etl_",      # Tables will be like "etl_products", "etl_cade_data"
         db_if_exists="replace",      # "replace", "append", or "fail"
         num_workers_hybrid_pool=max(1, (os.cpu_count() or 2) // 2), # Use half the cores for the pool for this example
