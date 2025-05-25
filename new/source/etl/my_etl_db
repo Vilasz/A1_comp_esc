@@ -1,0 +1,126 @@
+-- Connect to my_etl_db (e.g., psql -U my_etl_user -d my_etl_db)
+
+-- 1. Staging table for events received by the gRPC server
+CREATE TABLE IF NOT EXISTS received_events (
+    event_pk SERIAL PRIMARY KEY,
+    client_event_id INT NOT NULL,
+    client_id INT,
+    payload TEXT,
+    values_array INTEGER[],
+    timestamp_emission BIGINT NOT NULL,
+    timestamp_received TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    processed_by_etl BOOLEAN DEFAULT FALSE,
+    etl_processing_start_time TIMESTAMPTZ NULL,
+    etl_processing_end_time TIMESTAMPTZ NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_received_events_processed_timestamp 
+ON received_events (processed_by_etl, timestamp_received);
+
+-- 2. Analytical Summary Tables (examples)
+CREATE TABLE IF NOT EXISTS analytical_summary_prod_center (
+    id SERIAL PRIMARY KEY,
+    produto TEXT,
+    centro  TEXT,
+    total_valor REAL,
+    total_qtd  INTEGER,
+    analysis_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    source_event_emission_ts BIGINT, -- To link back to original event's timing
+    UNIQUE (produto, centro) -- Or handle updates if you aggregate over time
+);
+
+CREATE TABLE IF NOT EXISTS analytical_summary_canal (
+    id SERIAL PRIMARY KEY,
+    canal TEXT UNIQUE, -- Assuming canal names are unique for summary
+    total_valor REAL,
+    analysis_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    source_event_emission_ts BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS analytical_summary_estado (
+    id SERIAL PRIMARY KEY,
+    estado TEXT UNIQUE, -- Assuming estado codes are unique for summary
+    total_qtd INTEGER,
+    analysis_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    source_event_emission_ts BIGINT
+);
+
+
+-- 3. Ported Tables from ecommerce.db (DDL from your populate_ecommerce_db.py)
+-- Adjust types for PostgreSQL if necessary (e.g., TEXT for strings, REAL/DOUBLE PRECISION for float, INTEGER for int)
+-- AUTOINCREMENT is handled by SERIAL or BIGSERIAL in PostgreSQL.
+
+CREATE TABLE IF NOT EXISTS clientes (
+    id SERIAL PRIMARY KEY,
+    nome TEXT,
+    email TEXT,
+    cpf TEXT,
+    telefone TEXT,
+    endereco_json JSONB -- Using JSONB for better performance and indexing in PostgreSQL
+);
+
+CREATE TABLE IF NOT EXISTS categorias (
+    id SERIAL PRIMARY KEY,
+    nome TEXT,
+    descricao TEXT
+);
+
+CREATE TABLE IF NOT EXISTS produtos (
+    id SERIAL PRIMARY KEY,
+    nome TEXT,
+    descricao TEXT,
+    preco REAL,
+    estoque INTEGER,
+    categoria_id INTEGER REFERENCES categorias(id)
+);
+CREATE INDEX IF NOT EXISTS idx_produtos_categoria_id ON produtos(categoria_id);
+
+
+CREATE TABLE IF NOT EXISTS centros_logisticos (
+    id SERIAL PRIMARY KEY,
+    nome TEXT,
+    endereco_json JSONB,
+    capacidade INTEGER,
+    capacidade_utilizada INTEGER,
+    ativo BOOLEAN
+);
+
+CREATE TABLE IF NOT EXISTS pedidos (
+    id SERIAL PRIMARY KEY, -- This was for old batch orders, might not be directly used by new streaming events
+    cliente_id INTEGER REFERENCES clientes(id),
+    data_pedido TIMESTAMPTZ, -- For old orders
+    status TEXT,
+    centro_logistico_id INTEGER REFERENCES centros_logisticos(id),
+    valor_total REAL,
+    endereco_entrega_json JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_pedidos_cliente_id ON pedidos(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_pedidos_centro_logistico_id ON pedidos(centro_logistico_id);
+
+
+CREATE TABLE IF NOT EXISTS itens_pedido (
+    id SERIAL PRIMARY KEY, -- For old batch orders
+    pedido_id INTEGER REFERENCES pedidos(id),
+    produto_id INTEGER REFERENCES produtos(id),
+    quantidade INTEGER,
+    preco_unitario REAL
+);
+CREATE INDEX IF NOT EXISTS idx_itens_pedido_pedido_id ON itens_pedido(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_itens_pedido_produto_id ON itens_pedido(produto_id);
+
+
+CREATE TABLE IF NOT EXISTS entregas (
+    id SERIAL PRIMARY KEY, -- For old batch orders
+    pedido_id INTEGER REFERENCES pedidos(id),
+    data_envio TIMESTAMPTZ,
+    data_prevista TIMESTAMPTZ,
+    data_entrega TIMESTAMPTZ,
+    status TEXT,
+    transportadora TEXT,
+    codigo_rastreio TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_entregas_pedido_id ON entregas(pedido_id);
+
+-- Grant permissions if your ETL user is different from the owner
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO my_etl_user;
+-- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO my_etl_user;

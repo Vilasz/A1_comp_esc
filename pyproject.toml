@@ -6,7 +6,13 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "faker>=37.1.0",
+    "grpcio>=1.71.0",
+    "grpcio-tools>=1.71.0",
+    "matplotlib>=3.10.3",
+    "pandas>=2.2.3",
     "plotly>=6.0.1",
+    "psycopg2>=2.9.10",
+    "pymysql>=1.1.1",
     "sqlalchemy>=2.0.40",
     "streamlit>=1.44.1",
     "tqdm>=4.67.1",
