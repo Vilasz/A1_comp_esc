@@ -24,17 +24,19 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ndemo.proto\">\n\x0b\x44\x61taMessage\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0f\n\x07payload\x18\x02 \x01(\t\x12\x12\n\nvalue_list\x18\x03 \x03(\x05\"\x16\n\x03\x41\x63k\x12\x0f\n\x07message\x18\x01 \x01(\t2T\n\x08GRPCDemo\x12\"\n\nStreamData\x12\x0c.DataMessage\x1a\x04.Ack(\x01\x12$\n\x0eSimpleSendData\x12\x0c.DataMessage\x1a\x04.Ackb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ndemo.proto\"\x8d\x03\n\rPedidoMessage\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x12\n\ncliente_id\x18\x02 \x01(\x05\x12\x12\n\nproduto_id\x18\x03 \x01(\x05\x12\x14\n\x0c\x63\x61tegoria_id\x18\x04 \x01(\x05\x12\x0f\n\x07produto\x18\x05 \x01(\t\x12\x12\n\nquantidade\x18\x06 \x01(\x05\x12\x16\n\x0epreco_unitario\x18\x07 \x01(\x02\x12\x13\n\x0bvalor_total\x18\x08 \x01(\x02\x12\x13\n\x0b\x64\x61ta_pedido\x18\t \x01(\t\x12\x13\n\x0bhora_pedido\x18\n \x01(\t\x12\x0b\n\x03mes\x18\x0b \x01(\x05\x12\x0b\n\x03\x61no\x18\x0c \x01(\x05\x12\x13\n\x0b\x63\x61nal_venda\x18\r \x01(\t\x12%\n\x1d\x63\x65ntro_logistico_mais_proximo\x18\x0e \x01(\t\x12\x16\n\x0e\x63idade_cliente\x18\x0f \x01(\t\x12\x16\n\x0e\x65stado_cliente\x18\x10 \x01(\t\x12\x19\n\x11\x64ias_para_entrega\x18\x11 \x01(\x05\x12\x15\n\rregistrado_em\x18\x12 \x01(\t\"/\n\x0cListaPedidos\x12\x1f\n\x07pedidos\x18\x01 \x03(\x0b\x32\x0e.PedidoMessage\"\x16\n\x03\x41\x63k\x12\x0f\n\x07message\x18\x01 \x01(\t2X\n\x08GRPCDemo\x12$\n\nStreamData\x12\x0e.PedidoMessage\x1a\x04.Ack(\x01\x12&\n\x0eSimpleSendData\x12\x0e.PedidoMessage\x1a\x04.Ackb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'demo_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_DATAMESSAGE']._serialized_start=14
-  _globals['_DATAMESSAGE']._serialized_end=76
-  _globals['_ACK']._serialized_start=78
-  _globals['_ACK']._serialized_end=100
-  _globals['_GRPCDEMO']._serialized_start=102
-  _globals['_GRPCDEMO']._serialized_end=186
+  _globals['_PEDIDOMESSAGE']._serialized_start=15
+  _globals['_PEDIDOMESSAGE']._serialized_end=412
+  _globals['_LISTAPEDIDOS']._serialized_start=414
+  _globals['_LISTAPEDIDOS']._serialized_end=461
+  _globals['_ACK']._serialized_start=463
+  _globals['_ACK']._serialized_end=485
+  _globals['_GRPCDEMO']._serialized_start=487
+  _globals['_GRPCDEMO']._serialized_end=575
 # @@protoc_insertion_point(module_scope)

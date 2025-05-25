@@ -36,12 +36,12 @@ class GRPCDemoStub(object):
         """
         self.StreamData = channel.stream_unary(
                 '/GRPCDemo/StreamData',
-                request_serializer=demo__pb2.DataMessage.SerializeToString,
+                request_serializer=demo__pb2.PedidoMessage.SerializeToString,
                 response_deserializer=demo__pb2.Ack.FromString,
                 _registered_method=True)
         self.SimpleSendData = channel.unary_unary(
                 '/GRPCDemo/SimpleSendData',
-                request_serializer=demo__pb2.DataMessage.SerializeToString,
+                request_serializer=demo__pb2.PedidoMessage.SerializeToString,
                 response_deserializer=demo__pb2.Ack.FromString,
                 _registered_method=True)
 
@@ -66,12 +66,12 @@ def add_GRPCDemoServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'StreamData': grpc.stream_unary_rpc_method_handler(
                     servicer.StreamData,
-                    request_deserializer=demo__pb2.DataMessage.FromString,
+                    request_deserializer=demo__pb2.PedidoMessage.FromString,
                     response_serializer=demo__pb2.Ack.SerializeToString,
             ),
             'SimpleSendData': grpc.unary_unary_rpc_method_handler(
                     servicer.SimpleSendData,
-                    request_deserializer=demo__pb2.DataMessage.FromString,
+                    request_deserializer=demo__pb2.PedidoMessage.FromString,
                     response_serializer=demo__pb2.Ack.SerializeToString,
             ),
     }
@@ -100,7 +100,7 @@ class GRPCDemo(object):
             request_iterator,
             target,
             '/GRPCDemo/StreamData',
-            demo__pb2.DataMessage.SerializeToString,
+            demo__pb2.PedidoMessage.SerializeToString,
             demo__pb2.Ack.FromString,
             options,
             channel_credentials,
@@ -127,7 +127,7 @@ class GRPCDemo(object):
             request,
             target,
             '/GRPCDemo/SimpleSendData',
-            demo__pb2.DataMessage.SerializeToString,
+            demo__pb2.PedidoMessage.SerializeToString,
             demo__pb2.Ack.FromString,
             options,
             channel_credentials,

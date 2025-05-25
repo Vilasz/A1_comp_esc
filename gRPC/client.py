@@ -1,5 +1,4 @@
 """The example of data transmission using gRPC in Python."""
-
 import time
 
 import grpc
@@ -9,58 +8,161 @@ import demo_pb2_grpc
 
 from multiprocessing import Process
 
+# Para gerar os dados
+import random
+from faker import Faker
+from datetime import datetime, timedelta
+from typing import List, Sequence
+fk = Faker("pt_BR")
+
 SERVER_ADDRESS = "localhost:23333"
-CLIENT_ID = 1
+
+# Constantes
+
+PRODUCTS: List[str] = [
+    "Notebook", "Mouse", "Teclado", "Smartphone", "Fone de Ouvido",
+    "Monitor", "Cadeira Gamer", "Mesa para Computador", "Impressora",
+    "Webcam", "HD Externo", "SSD", "Placa de Vídeo", "Memória RAM",
+    "Fonte ATX", "Placa‑mãe", "Roteador Wi‑Fi", "Leitor de Cartão SD",
+    "Grampeador", "Luminária de Mesa", "Estabilizador", "Suporte p/ Notebook",
+    "Mousepad Gamer", "Caixa de Som Bluetooth", "Power Bank", "Scanner",
+    "Projetor", "Filtro de Linha", "Cabo USB‑C",
+]
+
+PRICES = {p: round(random.uniform(20, 4000), 2) for p in PRODUCTS}
+
+CENTERS: List[str] = [
+    "São Paulo", "Rio de Janeiro", "Belo Horizonte", "Curitiba",
+    "Porto Alegre", "Salvador", "Manaus", "Brasília", "Fortaleza", "Cuiabá",
+]
+
+CHANNELS = ["site", "app", "telefone", "loja"]
+
+WEIGHTS = [10, 9, 8, 6, 5, 3, 2, 1, 1, 1]
+
+# Funções para gerar dados
+def _rand_date(start: datetime, end: datetime) -> datetime:
+    delta = end - start
+    sec = random.randint(0, int(delta.total_seconds()))
+    return start + timedelta(seconds=sec)
+
+def generate_pedido_data(start_dt: datetime = None, end_dt: datetime = None) -> dict:
+    """Gera um único pedido com dados aleatórios"""
+    if start_dt is None:
+        start_dt = datetime(2023, 1, 1)
+    if end_dt is None:
+        end_dt = datetime(2024, 1, 1)
+    
+    prod_idx = random.randrange(len(PRODUCTS))
+    produto = PRODUCTS[prod_idx]
+    quantidade = random.choices(range(1, 11), weights=WEIGHTS, k=1)[0]
+    preco = PRICES[produto]
+    total = round(preco * quantidade, 2)
+    dt = _rand_date(start_dt, end_dt)
+    
+    return {
+        "cliente_id": random.randint(1, 500_000),
+        "produto_id": prod_idx + 1,
+        "categoria_id": random.randint(1, 20),
+        "produto": produto,
+        "quantidade": quantidade,
+        "preco_unitario": preco,
+        "valor_total": total,
+        "data_pedido": dt.date().isoformat(),
+        "hora_pedido": dt.time().isoformat(timespec="seconds"),
+        "mes": dt.month,
+        "ano": dt.year,
+        "canal_venda": random.choice(CHANNELS),
+        "centro_logistico_mais_proximo": random.choice(CENTERS),
+        "cidade_cliente": fk.city(),
+        "estado_cliente": fk.estado_sigla(),
+        "dias_para_entrega": random.randint(1, 10)
+    }
+
 
 # unary-unary(In a single call, the client can only send request once, and the server can
 # only respond once.)
-def send_data(client_id, n_msgs):
-    print(f"[Client {client_id}]--------------Call SimpleSend Begin--------------")
-    import random
-    with grpc.insecure_channel("localhost:23333") as channel:
+def send_data(client_id, n_msgs, server_adress=SERVER_ADDRESS):
+    print(f"[Client {client_id}] Iniciando envio de {n_msgs} pedidos...")
+
+    with grpc.insecure_channel(server_adress) as channel:
         stub = demo_pb2_grpc.GRPCDemoStub(channel)
+
         for i in range(n_msgs):
-            print(f"[Client {client_id}] sending one list.")
-            request = demo_pb2.DataMessage(
+            pedido_data = generate_pedido_data()
+            
+            request = demo_pb2.PedidoMessage(
                 id=client_id * 1000 + i,
-                payload=f"Client {client_id}: Payload {i}",
-                value_list = [random.randint(0,500) for _ in range(1000)])
+                cliente_id=pedido_data["cliente_id"],
+                produto_id=pedido_data["produto_id"],
+                categoria_id = pedido_data["categoria_id"],
+                produto = pedido_data["produto"],
+                quantidade = pedido_data["quantidade"],
+                preco_unitario = pedido_data["preco_unitario"],
+                valor_total = pedido_data["valor_total"],
+                data_pedido = pedido_data["data_pedido"],
+                hora_pedido = pedido_data["hora_pedido"],
+                mes = pedido_data["mes"],
+                ano = pedido_data["ano"],
+                canal_venda = pedido_data["canal_venda"],
+                centro_logistico_mais_proximo = pedido_data["centro_logistico_mais_proximo"],
+                cidade_cliente = pedido_data["cidade_cliente"],
+                estado_cliente=pedido_data["estado_cliente"],
+                dias_para_entrega=pedido_data["dias_para_entrega"]
+            )
+
             try:
                 response = stub.SimpleSendData(request)
-                print(f"[Client {client_id}] Server response over message {i}: {response}")
-            except KeyboardInterrupt:
-                print(f"[Client {client_id}] Interrupted.")
-            
-    print(f"[Client {client_id}]--------------Call SimpleSend Over---------------")
+                print(f"[Client {client_id}] Pedido {client_id * 1000 + i:04d} enviado | Status: {response.message}")
+            except Exception as e:
+                print(f"[Client {client_id}] Erro no pedido {client_id * 1000 + i:04d}: {str(e)}")
+                continue
+    
+    print(f"[Client {client_id}] Envio concluído")
 
 # client stream to server 
-def stream_data_worker(client_id):
-    with grpc.insecure_channel("localhost:23333") as channel:
+def stream_data_worker(client_id, server_adress=SERVER_ADDRESS):
+    with grpc.insecure_channel(server_adress) as channel:
         stub = demo_pb2_grpc.GRPCDemoStub(channel)
         
-        def generate_data(client_id):
+        def stream_data(client_id):
             import random
             i = 0
             print(f"[Client {client_id}] started sending data to server.")
             try:
                 while True:
                 # for _ in range(1):
-                    print("================================================================")
-                    value_list = [random.randint(0,500) for _ in range(1000)]
-                    print(f"tentando enviar values: {value_list[:10]}...")  # Mostra só os primeiros
-                    yield demo_pb2.DataMessage(
+                    pedido_data = generate_pedido_data()
+
+                    yield demo_pb2.PedidoMessage(
                         id=client_id * 1000 + i,
-                        payload=f"Client {client_id}: Payload {i}",
-                        value_list=value_list
+                        cliente_id=pedido_data["cliente_id"],
+                        produto_id=pedido_data["produto_id"],
+                        categoria_id = pedido_data["categoria_id"],
+                        produto = pedido_data["produto"],
+                        quantidade = pedido_data["quantidade"],
+                        preco_unitario = pedido_data["preco_unitario"],
+                        valor_total = pedido_data["valor_total"],
+                        data_pedido = pedido_data["data_pedido"],
+                        hora_pedido = pedido_data["hora_pedido"],
+                        mes = pedido_data["mes"],
+                        ano = pedido_data["ano"],
+                        canal_venda = pedido_data["canal_venda"],
+                        centro_logistico_mais_proximo = pedido_data["centro_logistico_mais_proximo"],
+                        cidade_cliente = pedido_data["cidade_cliente"],
+                        estado_cliente=pedido_data["estado_cliente"],
+                        dias_para_entrega=pedido_data["dias_para_entrega"]
                     )
-                    print(f"[Client {client_id}] sent values.")
+
+                    print(f"[Client {client_id}] sent datapoint.")
                     time.sleep(2)
                     i += 1
+                    
             except Exception as e:
                 print(f"[Client {client_id}] Exception in generate_data(): {e}")
 
         try:
-            response = stub.StreamData(generate_data(client_id))
+            response = stub.StreamData(stream_data(client_id))
             print(f"[Client {client_id}] Server response: {response}")
         except KeyboardInterrupt:
             print(f"[Client {client_id}] Interrupted.")
@@ -103,4 +205,4 @@ def test_simplesend_client(n_clients, n_msgs):
 
 if __name__ == "__main__":
     # test_streaming_client(5)
-    test_simplesend_client(8, 5)
+    test_simplesend_client(6, 5)
