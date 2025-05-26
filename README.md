@@ -1,6 +1,15 @@
 # Repositório para o trabalho de A1 da disciplina de Computação Escalável
+## Entrega RPC
+Para ligar o servidor com com 5 workers, por exemplo, basta rodar dentro da pasta /gGPC o comando:
+`python3 server.py 6`
 
-## Entrega final: pipeline ETL de Plataforma de E-commerce e Gestão de Cadeia de Suprimentos
+Para popular o banco de dados e gerar clientes ligados ao servidor enviando mensagens por meio do  padrões de comunicação EnviarPedidosEmLote com 5 clientes, lotes com 20 datapoints e 3 lotes, por exemplo, basta rodar dentro da pasta ./gGPC/ o comando:
+`python3 client.py --n_clients 5 --size_batch 20 --n_msgs 3`
+
+Para rodar o pipeline, depois de popular o banco de dados, basta rodar o comando:
+`python3 -m new.source.etl.ETL_new`
+
+## Entrega A1: pipeline ETL de Plataforma de E-commerce e Gestão de Cadeia de Suprimentos
 O projeto escolhido para mostrar aplicações do nosso micro-framework foi uma Plataforma de E-commerce e Gestão de Cadeia de Suprimentos.
 
 **FAVOR CONSIDERAR CÓDIGO NO INTERIOR DA PASTA NEW**
