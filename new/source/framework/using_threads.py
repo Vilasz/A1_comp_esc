@@ -46,8 +46,22 @@ class ThreadWrapper(threading.Thread, Generic[K, V]):
         logger.info("%s started.", self.name)
         while self._running.is_set():
             try:
+                item_from_queue = self.in_queue.get(block=True, timeout=0.5)
+
+                if item_from_queue is None:
+                    logger.info(f"{self.name}: Sentinel received. Shutting down.")
+                    # Propagate sentinel if there's an output queue
+                    if self.out_queue is not None:
+                        try:
+                            self.out_queue.put(None, block=False)
+                        except queue.Full:
+                            logger.warning(f"{self.name}: Output queue full while propagating SENTINEL.")
+                    if hasattr(self.in_queue, 'task_done'): # For JoinableQueue
+                        self.in_queue.task_done()
+                    break # Exit the run loop
+
                 # Get item with a timeout to allow checking self._running periodically
-                key, value = self.in_queue.get(block=True, timeout=0.5)
+                key, value = item_from_queue
                 self._processed_items_count +=1
             except queue.Empty:
                 # Timeout occurred, loop again to check self._running
