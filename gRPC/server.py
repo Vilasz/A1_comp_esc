@@ -3,6 +3,10 @@ from threading import Thread
 
 import time
 
+# Added for command line arguments
+import argparse
+import sys
+
 import grpc
 import sqlite3
 import json
@@ -293,23 +297,17 @@ class DemoServer(demo_pb2_grpc.GRPCDemoServicer):
 
 
 
-def main(n_workers):
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=n_workers))
-
+def main():
+    parser = argparse.ArgumentParser(description='Start the gRPC server.')
+    parser.add_argument('n_workers', type=int, help='Number of worker threads')
+    args = parser.parse_args()
+    
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=args.n_workers))
     demo_pb2_grpc.add_GRPCDemoServicer_to_server(DemoServer(), server)
-
     server.add_insecure_port(SERVER_ADDRESS)
-    print(f"--------start Python GRPC server w/ {n_workers} workers--------")
+    print(f"--------start Python GRPC server w/ {args.n_workers} workers--------")
     server.start()
     server.wait_for_termination()
 
-    # If raise Error:
-    #   AttributeError: '_Server' object has no attribute 'wait_for_termination'
-    # You can use the following code instead:
-    # import time
-    # while 1:
-    #     time.sleep(10)
-
-
 if __name__ == "__main__":
-    main(4)
+    main()

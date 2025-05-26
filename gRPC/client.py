@@ -6,6 +6,8 @@ import grpc
 import demo_pb2
 import demo_pb2_grpc
 
+import argparse
+
 from multiprocessing import Process
 
 # Para gerar os dados
@@ -112,7 +114,7 @@ def send_data(client_id, n_msgs, server_adress=SERVER_ADDRESS):
                 dias_para_entrega=pedido_data["dias_para_entrega"],
                 timestamp_envio=pedido_data["timestamp_envio"]
             )
-            
+
             try:
                 response = stub.SimpleSendData(request)
                 print(f"[Client {client_id}] Pedido {client_id * 1000 + i:04d} enviado | Status: {response.message}")
@@ -326,9 +328,24 @@ def test_streambatch_client(n_clients, size_batch):
         for p in processes:
             p.terminate()
 
+def main():
+    parser = argparse.ArgumentParser(description='Start gRPC client.')
+    parser.add_argument('--n_clients', type=int, default=1, help='Number of client processes')
+    parser.add_argument('--size_batch', type=int, default=10, help='Size of each batch')
+    parser.add_argument('--n_msgs', type=int, default=5, help='Number of messages/batches to send')
+    parser.add_argument('--mode', choices=['simple', 'stream', 'batch', 'streambatch'], 
+                       default='batch', help='Operation mode')
+    
+    args = parser.parse_args()
+    
+    if args.mode == 'simple':
+        test_simplesend_client(args.n_clients, args.n_msgs)
+    elif args.mode == 'stream':
+        test_streaming_client(args.n_clients)
+    elif args.mode == 'batch':
+        test_sendbatch_client(args.n_clients, args.size_batch, args.n_msgs)
+    elif args.mode == 'streambatch':
+        test_streambatch_client(args.n_clients, args.size_batch)
 
 if __name__ == "__main__":
-    # test_streaming_client(5)
-    # test_simplesend_client(6, 5)
-    test_sendbatch_client(5,10,5)
-    # test_streambatch_client(3, 10)
+    main()
