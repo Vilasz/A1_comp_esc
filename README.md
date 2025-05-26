@@ -1,9 +1,11 @@
 # Repositório para o trabalho de A1 da disciplina de Computação Escalável
 ## Entrega RPC
-Para ligar o servidor com com 5 workers, por exemplo, basta rodar dentro da pasta /gGPC o comando:
-`python3 server.py 6`
+O pdf com relatório explicando a lógica da comunicação com RPC implementada está no arquivo Relatorio Trabalho RPC.pdf
 
-Para popular o banco de dados e gerar clientes ligados ao servidor enviando mensagens por meio do  padrões de comunicação EnviarPedidosEmLote com 5 clientes, lotes com 20 datapoints e 3 lotes, por exemplo, basta rodar dentro da pasta ./gGPC/ o comando:
+Para ligar o servidor com com 5 workers, por exemplo, basta rodar dentro da pasta /gRPC o comando:
+`python3 server.py 5`
+
+Para popular o banco de dados e gerar clientes ligados ao servidor enviando mensagens por meio do  padrões de comunicação EnviarPedidosEmLote com 5 clientes, lotes com 20 datapoints e 3 lotes, por exemplo, basta rodar dentro da pasta ./gRPC/ o comando:
 `python3 client.py --n_clients 5 --size_batch 20 --n_msgs 3`
 
 Para rodar o pipeline, depois de popular o banco de dados, basta rodar o comando:
