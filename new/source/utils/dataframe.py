@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple, Union,
                     Sequence, TypeVar, Generic)
 from collections import defaultdict, OrderedDict # For GroupBy and preserving order
+import sqlite3
 
 LOG_FORMAT = "%(asctime)s [%(levelname)8s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
@@ -213,6 +214,10 @@ class DataFrame:
     @property
     def columns(self) -> List[str]:
         return list(self._columns)
+    
+    @property
+    def empty(self) -> List[str]:
+        return len(self._data_rows) == 0
 
     @columns.setter
     def columns(self, new_columns: List[str]) -> None:
@@ -442,6 +447,244 @@ class DataFrame:
         # Sorting multiple columns: Python's sort is stable. Sort by last key first.
         # This is incorrect. We need to pass all keys to sort simultaneously.
         # sorted_indices
+
+    @staticmethod
+    def from_sqlite(db_path: str, table_name: str) -> 'DataFrame':
+        """
+        Creates a DataFrame instance by querying data from a SQLite database table.
+
+        Args:
+            db_path (str): The path to the SQLite database file (e.g., "data_messages.db").
+            table_name (str): The name of the table to query (e.g., "pedidos").
+
+        Returns:
+            DataFrame: A new DataFrame instance populated with data from the SQLite table.
+        
+        Raises:
+            sqlite3.Error: If there's an issue connecting to the database or executing queries.
+            ValueError: If the table does not exist or has no data.
+        """
+        conn = None # Initialize conn to None
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Get column names from the table
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns_info = cursor.fetchall()
+            if not columns_info:
+                raise ValueError(f"Table '{table_name}' not found or has no columns in database '{db_path}'.")
+            
+            column_names = [col[1] for col in columns_info] # col[1] is the column name
+
+            # Fetch all data from the table
+            cursor.execute(f"SELECT * FROM {table_name}")
+            rows = cursor.fetchall()
+
+            if not rows:
+                logger.info(f"Table '{table_name}' is empty in database '{db_path}'. Returning an empty DataFrame.")
+                return DataFrame(columns=column_names)
+
+            # Convert rows to a list of dictionaries for DataFrame constructor
+            # This ensures column names are correctly mapped even if order changes
+            data_as_dicts = []
+            for row in rows:
+                row_dict = {}
+                for i, col_name in enumerate(column_names):
+                    row_dict[col_name] = row[i]
+                data_as_dicts.append(row_dict)
+
+            return DataFrame(columns=column_names, data=data_as_dicts)
+
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error when accessing table '{table_name}' in '{db_path}': {e}")
+            raise # Re-raise the exception after logging
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    # --- vstack method ---
+    def vstack(self, others: Union['DataFrame', List['DataFrame']]) -> 'DataFrame':
+        """
+        Stack the current DataFrame vertically with one or more other DataFrames.
+
+        Args:
+            others: A single DataFrame or a list of DataFrames to stack.
+
+        Returns:
+            A new DataFrame containing all rows from self and other DataFrames.
+            Columns are the union of all columns involved. Missing values are filled with None.
+        """
+        if isinstance(others, DataFrame):
+            dfs_to_stack = [others]
+        elif isinstance(others, list):
+            if not all(isinstance(df, DataFrame) for df in others):
+                raise TypeError("All items in the 'others' list must be DataFrame instances.")
+            dfs_to_stack = others
+        else:
+            raise TypeError("Input to vstack must be a DataFrame or a list of DataFrames.")
+
+        if not dfs_to_stack: # e.g. df.vstack([])
+            return self.copy()
+
+        all_dfs = [self] + dfs_to_stack
+
+        # 1. Determine the union of all columns, preserving order of first appearance.
+        final_columns_ordered_dict = OrderedDict()
+        for df_instance in all_dfs:
+            for col_name in df_instance.columns:  # Assumes df_instance.columns returns list in correct order
+                if col_name not in final_columns_ordered_dict:
+                    final_columns_ordered_dict[col_name] = None  # Value doesn't matter, just for keyset
+        
+        final_column_names = list(final_columns_ordered_dict.keys())
+
+        # 2. Collect all data rows, conforming them to the final_column_names.
+        all_stacked_data_rows: List[Dict[str, Any]] = []
+        for df_instance in all_dfs:
+            for i in range(df_instance.shape[0]):
+                original_row_dict = df_instance.get_row_dict(i)
+                
+                # Create a new row dictionary that includes all final columns
+                conformed_row: Dict[str, Any] = {} # Using standard dict is fine here
+                for col_name in final_column_names:
+                    conformed_row[col_name] = original_row_dict.get(col_name, None) # Fill with None if missing
+                all_stacked_data_rows.append(conformed_row)
+        
+        # 3. Create the new DataFrame using its constructor.
+        # The constructor will handle initializing _columns, _data_rows, and _series_map.
+        return DataFrame(columns=final_column_names, data=all_stacked_data_rows)
+    
+    def __repr__(self) -> str:
+        # Configuration for display
+        MAX_ROWS_DISPLAY = 20  # Max total rows to display without truncation
+        HEAD_ROWS_DISPLAY = 10 # Number of head rows if truncating
+        TAIL_ROWS_DISPLAY = 10 # Number of tail rows if truncating
+        CELL_PADDING = 1       # Spaces on each side of cell content within the cell borders
+
+        num_total_rows = self.shape[0]
+        num_cols = self.shape[1]
+        current_columns = list(self.columns) # Get a copy of column names
+
+        # --- 1. Handle edge cases ---
+        info_line = f"DataFrame shape: {self.shape}"
+
+        if num_cols == 0: # No columns
+            if num_total_rows == 0: # No columns, no rows
+                return f"{info_line}, columns=[]\n(empty DataFrame)"
+            else: # No columns, but has rows (rows are essentially list of empty dicts)
+                return f"{info_line}, columns=[]\n({num_total_rows} rows, no columns to display)"
+
+        if num_total_rows == 0: # Has columns, but no rows
+            return f"{info_line}, columns={current_columns}\n(0 rows)"
+
+        # --- 2. Determine rows to display and calculate column widths ---
+        # col_widths stores the width of the content (max length of data strings or header string)
+        col_widths = {col: len(str(col)) for col in current_columns}
+        
+        head_data_str_rows: List[List[str]] = [] # Holds stringified data for head rows
+        tail_data_str_rows: List[List[str]] = [] # Holds stringified data for tail rows
+        
+        show_ellipsis = num_total_rows > MAX_ROWS_DISPLAY
+
+        if not show_ellipsis:
+            # Display all rows
+            for i in range(num_total_rows):
+                row_dict = self.get_row_dict(i)
+                str_row = []
+                for col_name in current_columns:
+                    val_str = str(row_dict.get(col_name))
+                    str_row.append(val_str)
+                    col_widths[col_name] = max(col_widths[col_name], len(val_str))
+                head_data_str_rows.append(str_row)
+        else:
+            # Display head rows
+            for i in range(min(HEAD_ROWS_DISPLAY, num_total_rows)): # min handles cases where num_total_rows is small but > MAX_ROWS_DISPLAY
+                row_dict = self.get_row_dict(i)
+                str_row = []
+                for col_name in current_columns:
+                    val_str = str(row_dict.get(col_name))
+                    str_row.append(val_str)
+                    col_widths[col_name] = max(col_widths[col_name], len(val_str))
+                head_data_str_rows.append(str_row)
+            
+            # Display tail rows
+            # Calculate start index for fetching tail rows
+            tail_start_fetch_idx = max(HEAD_ROWS_DISPLAY, num_total_rows - TAIL_ROWS_DISPLAY)
+            for i in range(tail_start_fetch_idx, num_total_rows):
+                row_dict = self.get_row_dict(i)
+                str_row = []
+                for col_name in current_columns:
+                    val_str = str(row_dict.get(col_name))
+                    str_row.append(val_str)
+                    col_widths[col_name] = max(col_widths[col_name], len(val_str))
+                tail_data_str_rows.append(str_row)
+
+        # --- 3. Build the table string ---
+        output_lines = [info_line]
+
+        # Helper to format cell content (text part only, padding applied later)
+        def format_cell_content(text: str, content_width: int, is_header: bool = False) -> str:
+            if is_header:
+                return text.center(content_width) 
+            return text.ljust(content_width) # Left-align data
+
+        # Prepare formatted header and separator parts
+        header_cell_contents = [] # Content part of header cells
+        separator_cell_parts = [] # Dashes for each cell's total width
+
+        for col_name in current_columns:
+            content_width = col_widths[col_name]
+            cell_total_width_with_padding = content_width + 2 * CELL_PADDING
+            
+            header_cell_contents.append(format_cell_content(str(col_name), content_width, is_header=True))
+            separator_cell_parts.append("-" * cell_total_width_with_padding)
+        
+        table_border_str = "+" + "+".join(separator_cell_parts) + "+"
+        
+        # Apply padding to header contents and join
+        padded_header_cells = [f"{' '*CELL_PADDING}{content}{' '*CELL_PADDING}" for content in header_cell_contents]
+        header_line_str = "|" + "|".join(padded_header_cells) + "|"
+
+        output_lines.append(table_border_str)
+        output_lines.append(header_line_str)
+        output_lines.append(table_border_str)
+
+        # Function to format and add a list of data rows to output_lines
+        def append_data_rows_to_output(data_rows: List[List[str]]):
+            for str_row_list in data_rows:
+                data_cell_parts_with_padding = []
+                for i, cell_val_str in enumerate(str_row_list):
+                    col_name = current_columns[i]
+                    content_width = col_widths[col_name]
+                    formatted_content = format_cell_content(cell_val_str, content_width)
+                    data_cell_parts_with_padding.append(f"{' '*CELL_PADDING}{formatted_content}{' '*CELL_PADDING}")
+                output_lines.append("|" + "|".join(data_cell_parts_with_padding) + "|")
+
+        # Data Rows (Head)
+        append_data_rows_to_output(head_data_str_rows)
+
+        # Ellipsis Row (if needed)
+        if show_ellipsis:
+            ellipsis_cell_parts_with_padding = []
+            for col_name in current_columns:
+                content_width = col_widths[col_name]
+                ellipsis_str = "...".center(content_width) # Center "..." within the content area
+                ellipsis_cell_parts_with_padding.append(f"{' '*CELL_PADDING}{ellipsis_str}{' '*CELL_PADDING}")
+            output_lines.append("|" + "|".join(ellipsis_cell_parts_with_padding) + "|")
+
+        # Data Rows (Tail) (if show_ellipsis was true, these are the tail rows)
+        if show_ellipsis: # Only append if tail_data_str_rows were specifically for tail
+             append_data_rows_to_output(tail_data_str_rows)
+        
+        output_lines.append(table_border_str)
+        
+        if show_ellipsis:
+            output_lines.append(f"({num_total_rows} total rows)")
+            
+        return "\n".join(output_lines)
 
 # --- Funções Auxiliares para Leitura de Arquivos ---
 

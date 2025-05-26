@@ -56,6 +56,25 @@ class TXTExtractorEtl(BaseStrategy):
         logger.info("ETL: Lendo TXT %s (delimiter '%s')", self.path, self.delimiter)
         return read_csv(self.path, delimiter=self.delimiter, has_header=self.has_header) # Uses read_csv
 
+# --- Adding SQL data extraction logic
+class SQLExtractorEtl(BaseStrategy):
+    def __init__(self, path: Path, table_name: str):
+        self.path = path
+        self.table_name = table_name
+
+    def extract(self):
+        logger.info("ETL: Lendo SQLite %s, tabela %s)", self.path, self.table_name)
+        return DataFrame.from_sqlite(str(self.path), self.table_name)
+
+class SQLNewExtractorEtl(BaseStrategy):
+    def __init__(self, path: Path, table_name: str):
+        self.path = path
+        self.table_name = table_name
+
+    def extract(self):
+        logger.info("ETL: Lendo SQLite %s, tabela %s)", self.path, self.table_name)
+        return DataFrame.from_sqlitenew(str(self.path), self.table_name)
+
 # --- ETL Specific Loader ---
 class SQLLoaderEtl(BaseStrategy):
     def __init__(self, conn_or_path: Union[sqlite3.Connection, str, Path], table_name: str, if_exists: str = "append"):
@@ -341,8 +360,11 @@ class RepoData:
         txt_delimiter: str = "|",
         txt_has_header: bool = False,
         json_records_path: Optional[Union[str, List[str]]] = None,
+        table_name: str = None,
+        encoding: str = None,
+        db_conn_or_path: str = None
     ) -> None:
-        self._close_previous_strategy_connection() # Close connection if previous was SQL loader
+        # self._close_previous_strategy_connection() # Close connection if previous was SQL loader
         actual_path = Path(path)
 
         if kind == self.Kind.CSV:
@@ -351,6 +373,10 @@ class RepoData:
             self._strategy = TXTExtractorEtl(actual_path, delimiter=txt_delimiter, has_header=txt_has_header)
         elif kind == self.Kind.JSON:
             self._strategy = JSONExtractorEtl(actual_path, records_path=json_records_path)
+        elif kind == self.Kind.SQL:
+            self._strategy = SQLExtractorEtl(actual_path, table_name=table_name)
+        elif kind == self.Kind.SQLNew:
+            self._strategy = SQLExtractorEtl(actual_path, table_name=table_name)
         else:
             raise ValueError(f"ETL: Tipo de estratégia de extração desconhecido ou não suportado: {kind}")
         self._managed_sql_loader = None
@@ -396,7 +422,8 @@ class RepoData:
             self._managed_sql_loader = None
             
     def __del__(self):
-        self._close_previous_strategy_connection()
+        # self._close_previous_strategy_connection()
+        pass
 
 
 # --- MapMutex (Per-key locking dictionary wrapper) ---
